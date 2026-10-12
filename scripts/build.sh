@@ -2,6 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/prepare-toolchain.sh
+bash scripts/sign-app.sh --check
 build_args=(-c release --product AgentPace --disable-sandbox --cache-path .build/cache --config-path .build/config --security-path .build/security)
 case "${1:-}" in
     "") architectures=("$(uname -m)") ;;
@@ -29,8 +30,7 @@ strip -S "$app/Contents/MacOS/AgentPace"
 cp Resources/Info.plist "$app/Contents/Info.plist"
 swift scripts/make-icon.swift "$PWD/.build/AppIcon.iconset" "$app/Contents/Resources/AppIcon.icns"
 xattr -cr "$app"
-codesign --force --sign - "$app"
-codesign --verify --deep --strict "$app"
+bash scripts/sign-app.sh "$app"
 mkdir -p dist
 ditto --norsrc --noextattr "$app" "$PWD/dist/Agent Pace.app"
 printf '已构建：%s\n' "$PWD/dist/Agent Pace.app"

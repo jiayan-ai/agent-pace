@@ -18,7 +18,9 @@ struct ClientTests {
         receive('account/read')
         send({'id':2,'result':{'account':{'type':'chatgpt','id':'fixture-account'}}})
         receive('account/rateLimits/read')
-        send({'id':3,'result':{'rateLimits':{'limitId':'codex','primary':{'usedPercent':25,'windowDurationMins':10080,'resetsAt':2000000000}}}})
+        send({'id':3,'result':{'rateLimits':{'limitId':'codex','primary':{'usedPercent':25,'windowDurationMins':10080,'resetsAt':2000000000}},'rateLimitResetCredits':{'availableCount':2,'credits':None}}})
+        receive('account/usage/read')
+        send({'id':4,'result':{'dailyUsageBuckets':[]}})
         sys.stdin.read()
         """#
         let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -29,6 +31,33 @@ struct ClientTests {
         try expect((snapshot.response.windows.first?.window.remaining) == (75))
         try expect((snapshot.accountKey.count) == (64))
         try expect((snapshot.accountKey) != ("fixture-account"))
+        try expect(snapshot.response.rateLimitResetCredits?.availableCount == 2)
+        try expect(snapshot.activity?.dailyUsageBuckets?.isEmpty == true)
+    }
+
+    func testUnavailableHistoryDoesNotBreakQuotas() throws {
+        for historyReply in [#"{'id':4,'error':{'code':-32601,'message':'unsupported'}}"#,
+                             #"{'id':4,'result':{'dailyUsageBuckets':'invalid'}}"#] {
+            let script = """
+            #!/usr/bin/python3
+            import sys,json
+            for method,reply in [
+              ('initialize',{'id':1,'result':{}}),('initialized',None),
+              ('account/read',{'id':2,'result':{'account':{'type':'chatgpt','id':'fixture'}}}),
+              ('account/rateLimits/read',{'id':3,'result':{'rateLimits':{'limitId':'codex','primary':{'usedPercent':25,'windowDurationMins':10080,'resetsAt':2000000000}}}}),
+              ('account/usage/read',\(historyReply))]:
+                assert json.loads(sys.stdin.readline())['method']==method
+                if reply is not None: print(json.dumps(reply),flush=True)
+            sys.stdin.read()
+            """
+            let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try script.write(to: path, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path.path)
+            defer { try? FileManager.default.removeItem(at: path) }
+            let snapshot = try CodexClient.fetch(executable: path, timeout: 3)
+            try expect(snapshot.response.windows.first?.window.remaining == 75)
+            try expect(snapshot.activity == nil)
+        }
     }
 
     func testTimeoutIsBounded() throws {

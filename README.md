@@ -10,11 +10,12 @@ A native macOS menu bar app that turns your remaining Codex / Claude subscriptio
 - 按剩余额度和重置时间均摊；当天预算固定，再扣减实际消耗。
 - 超过预算显示红色负数，两个平台和各额度窗口分别保存记录。
 - 每 5 分钟刷新，支持登录 Mac 时启动。
+- Codex reset 券数量、有效期同步；结合近 30 天账户日用量给出使用建议。
 - 原生 SwiftUI + AppKit，无第三方库，不自动消耗额度。
 
 ## 打开
 
-从 [Releases](https://github.com/jiayan-ai/agent-pace/releases/latest) 下载 `Agent-Pace-1.2.0-universal.zip`，解压后将 **Agent Pace.app** 拖入「应用程序」文件夹，再双击打开。无需安装开发工具或编译源码。
+从 [Releases](https://github.com/jiayan-ai/agent-pace/releases/latest) 下载对应版本的 `Agent-Pace-…-universal.zip`，解压后将 **Agent Pace.app** 拖入「应用程序」文件夹，再双击打开。无需安装开发工具或编译源码。本文描述当前源码功能；已发布安装包的功能以对应 Release 说明为准。
 
 当前下载包采用临时签名，尚未取得 Apple Developer ID 签名及公证。macOS 首次打开可能阻止运行；确认下载来源后，可按 [Apple 官方说明](https://support.apple.com/en-us/102445) 在「系统设置 → 隐私与安全性」选择「仍要打开」。不需要关闭系统安全检查。
 
@@ -50,11 +51,26 @@ A native macOS menu bar app that turns your remaining Codex / Claude subscriptio
 
 这是均摊使用建议，不会自动消耗额度。
 
+## Reset 助手（1.3.0）
+
+Codex 面板会同步可用 reset 总数及接口提供的每张券的有效期，并从官方 `account/usage/read` 接口读取最近 30 天的每日 Token 活跃度。展开「近 30 天模式与 Reset 明细」可查看图表、活跃天数、常见高用量星期和最近一周的变化。无需读取聊天记录或调用模型。
+
+- 只统计过去 30 个完整日期，使用 UTC 日期轴处理接口日期，剔除当天的不完整数据；缺失日期不当作零。重复日期取最大一条，不累加。
+- 至少 14 个有效日记录才生成模式建议。星期偏好至少需要该星期 3 个样本，均值向总体平均值平滑后超过总体 1.2 倍才提示；近 7 天至少 4 个样本、此前至少 7 个样本才计算趋势，1.35 倍以上标为近期较忙。
+- 每个 Codex 窗口单独判断：接近耗尽的窗口在 6 小时内自然重置，优先等；已经耗尽且还需等超过 6 小时，提示有继续工作的需要时考虑 reset。
+- 窗口余额不超过 10%，且近期较忙或今天 / 明天是常见高用量日，建议下一段集中工作前重新评估 reset。券在 3 天内到期时提示优先顺序，不建议为用券刻意消耗额度。
+- 基础额度超过 11 分钟未确认，或已知券到期、窗口时间失效时，先要求同步。月度历史超过 6 小时未成功同步时不使用模式建议。历史接口不可用不影响基础额度。
+- 可用总数以服务端为准；明细可能不完整。未返回数量显示未知，不推测为零。
+
+这是可解释的本地规则建议。Token 活跃度不能直接换算成额度百分比，所以不声称准确预测耗尽时间；模型切换、套餐变化和未来工作计划也可能改变用量。**不会自动兑换 reset**，用户需要时回到 Codex 操作。当天均摊预算变为负数本身不构成重置理由。
+
+Claude 当前使用的接口没有提供 reset 券或月度账户历史，因此暂不提供这部分建议，不会猜测券数。Codex 月度记录与额度记录按账户隔离，切换账户会清除旧账户的模式数据。
+
 ## 数据与隐私
 
-使用官方 [Codex App Server 接口](https://learn.chatgpt.com/docs/app-server)：`initialize`、`account/read`、`account/rateLimits/read`。不会调用 `turn/start`，不会创建聊天或发起模型推理，也不会消耗重置券。
+使用官方 [Codex App Server 接口](https://learn.chatgpt.com/docs/app-server)：`initialize`、`account/read`、`account/rateLimits/read`、`account/usage/read`。不会调用 `turn/start` 或 `account/rateLimitResetCredit/consume`，不会创建聊天、发起模型推理或消耗重置券。
 
-Codex 由已安装的 Codex 程序管理登录，小工具不读取其认证令牌。账户标识（ID 或邮箱）与工作区路由仅取哈希用于区分预算；不保存明文邮箱。额度快照和每日基线保存于 `~/Library/Application Support/CodexPace/state.json`，沿用旧名称以保留升级前的记录。错误信息不记录原始服务响应。
+Codex 由已安装的 Codex 程序管理登录，小工具不读取其认证令牌。账户标识（ID 或邮箱）与工作区路由仅取哈希用于区分预算；不保存明文邮箱。额度快照、每日基线、reset 券信息和近 30 天日用量保存在 `~/Library/Application Support/CodexPace/state.json`，沿用旧名称以保留升级前的记录。历史只在本机分析，不上传给其他服务。错误信息不记录原始服务响应。
 
 Claude 读取桌面应用 `config.json` 中的加密 OAuth 缓存，仅在内存中使用登录令牌，通过 `api.anthropic.com/api/oauth/usage` 和 `/api/oauth/profile` 查询额度与核对账户。解密通过 macOS 钥匙串中指定的 `Claude Safe Storage` 项目。不会保存令牌、轮换登录或修改 Claude 的配置，也不读取浏览器 Cookie。
 
@@ -95,6 +111,8 @@ bash scripts/package-release.sh
 ```
 
 没有第三方依赖。使用 SwiftUI + AppKit，构建产物采用本机临时签名，未进行 App Store 分发或公证。自动发现 ChatGPT / Codex 标准安装路径及常见 CLI 路径；如果升级后的应用改变程序位置，需要更新发现逻辑。
+
+Developer ID 签名、公证提交及票据装订流程见 [签名与公证](docs/NOTARIZATION.md)。脚本准备好并不等于 Apple 已接受公证；只有验收全部通过的产物才会带 `-notarized.zip` 后缀。
 
 ## 开发与反馈
 

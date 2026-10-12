@@ -11,6 +11,8 @@ public struct ProviderHistory: Codable {
     public var snapshot: UsageSnapshot?
     public var budgets: [String: DailyBudget]
     public var selectedID: String
+    public var activity: AccountActivity?
+    public var activityFetchedAt: Date?
 
     public init(snapshot: UsageSnapshot? = nil, budgets: [String: DailyBudget] = [:], selectedID: String = "") {
         self.snapshot = snapshot
@@ -19,7 +21,15 @@ public struct ProviderHistory: Codable {
     }
 
     public mutating func ingest(_ current: UsageSnapshot, calendar: Calendar = .current) {
-        if snapshot?.accountKey != current.accountKey { budgets = [:] }
+        if snapshot?.accountKey != current.accountKey {
+            budgets = [:]
+            activity = nil
+            activityFetchedAt = nil
+        }
+        if let currentActivity = current.activity, currentActivity.dailyUsageBuckets != nil {
+            activity = currentActivity.recent(now: current.fetchedAt)
+            activityFetchedAt = current.fetchedAt
+        }
         snapshot = current
         var next: [String: DailyBudget] = [:]
         for item in current.response.windows {

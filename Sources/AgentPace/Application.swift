@@ -141,7 +141,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func showWindow() {
         hideMenu()
         if window == nil {
-            let host = NSHostingController(rootView: PaceView(store: store))
+            let host = NSHostingController(rootView: ScrollView(.vertical) {
+                PaceView(store: store)
+            }.frame(width: 400, height: 600))
             let newWindow = NSWindow(contentViewController: host)
             newWindow.title = "Agent Pace"
             newWindow.styleMask = [.titled, .closable, .miniaturizable]
@@ -170,6 +172,12 @@ struct AgentPaceApplication {
                 for item in snapshot.response.windows {
                     let budget = DailyBudget.reconcile(previous: nil, window: item.window, now: snapshot.fetchedAt)
                     print("\(item.label): 剩余 \(item.window.remaining.map(number) ?? "未知")%; 日均 \(budget.map { number($0.allowance) } ?? "未知")%; 重置 \(item.window.resetDate.map(resetTime) ?? "未知")")
+                }
+                if CommandLine.arguments.contains("--check-connection") {
+                    let pattern = UsagePattern(activity: snapshot.activity, now: snapshot.fetchedAt)
+                    let advice = ResetAdvice.evaluate(response: snapshot.response, pattern: pattern,
+                                                      historyFresh: snapshot.activity != nil, stale: false, now: snapshot.fetchedAt)
+                    print("Reset: \(snapshot.response.rateLimitResetCredits.map { String($0.availableCount) } ?? "未知") 次；近 30 天有效记录 \(pattern.observedDays) 天；\(advice.title)")
                 }
                 if snapshot.response.windows.isEmpty { print("未返回额度窗口") }
             } catch {

@@ -71,6 +71,14 @@ final class PaceStore: ObservableObject {
         return "\(provider.shortTitle) \(stale ? "≈" : "")\(number(budget.leftToday))%"
     }
     var daysLeft: Double? { selected?.window.resetDate.map { max(0, $0.timeIntervalSince(now) / 86400) } }
+    var usagePattern: UsagePattern { UsagePattern(activity: history[provider].activity, now: now) }
+    var activityUpdatedAt: Date? { history[provider].activityFetchedAt }
+    var resetAdvice: ResetAdvice {
+        let historyAge = activityUpdatedAt.map { now.timeIntervalSince($0) } ?? .infinity
+        return ResetAdvice.evaluate(response: snapshot?.response, pattern: usagePattern,
+                                    historyFresh: historyAge >= 0 && historyAge < 6 * 3600,
+                                    stale: stale, now: now)
+    }
     func choose(_ id: String) { history[provider].selectedID = id; persist(); onChange?() }
     func selectProvider(_ value: UsageProvider) {
         guard value != provider else { return }

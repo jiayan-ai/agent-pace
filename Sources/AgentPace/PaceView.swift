@@ -34,6 +34,7 @@ struct PaceView: View {
                     Label("等待最新额度，确认今天的预算", systemImage: "clock.arrow.circlepath")
                         .font(.callout).foregroundStyle(.secondary)
                 }
+                if store.provider == .codex { ResetInsightsView(store: store) }
                 if store.stale {
                     Label("显示上次记录，尚未确认最新额度", systemImage: "exclamationmark.circle")
                         .font(.caption).foregroundStyle(.orange)
@@ -182,6 +183,7 @@ struct PaceView: View {
                 Text("跨天、切换账户或额度重置后重新计算。百分比指总额度的百分点；这是均摊建议，实际使用仍受其他额度窗口限制。")
                 if store.provider == .claude {
                     Text("Claude 各入口共享订阅额度。使用桌面应用的登录同步；登录过期时请打开 Claude 的 Code 页面后刷新。")
+                    Text("当前 Claude 接口未提供 reset 券或账户月度历史，因此不推测券数，也不生成月度 reset 建议。")
                     if store.claudeEnabled {
                         Button("断开 Claude 连接") { store.disconnectClaude() }
                             .disabled(store.isRefreshing)

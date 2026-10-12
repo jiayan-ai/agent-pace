@@ -37,10 +37,13 @@ public struct UsageBucket: Codable {
 public struct UsageResponse: Codable {
     public let rateLimits: UsageBucket?
     public let rateLimitsByLimitId: [String: UsageBucket]?
+    public let rateLimitResetCredits: ResetCredits?
 
-    public init(rateLimits: UsageBucket?, rateLimitsByLimitId: [String: UsageBucket]? = nil) {
+    public init(rateLimits: UsageBucket?, rateLimitsByLimitId: [String: UsageBucket]? = nil,
+                rateLimitResetCredits: ResetCredits? = nil) {
         self.rateLimits = rateLimits
         self.rateLimitsByLimitId = rateLimitsByLimitId
+        self.rateLimitResetCredits = rateLimitResetCredits
     }
 
     public var windows: [MeteredWindow] {

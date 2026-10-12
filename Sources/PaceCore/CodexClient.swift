@@ -6,11 +6,13 @@ public struct UsageSnapshot: Codable {
     public let response: UsageResponse
     public let accountKey: String
     public let fetchedAt: Date
+    public let activity: AccountActivity?
 
-    public init(response: UsageResponse, accountKey: String, fetchedAt: Date) {
+    public init(response: UsageResponse, accountKey: String, fetchedAt: Date, activity: AccountActivity? = nil) {
         self.response = response
         self.accountKey = accountKey
         self.fetchedAt = fetchedAt
+        self.activity = activity
     }
 }
 
@@ -43,7 +45,7 @@ public enum CodexClient {
         return candidates.first(where: FileManager.default.isExecutableFile(atPath:)).map(URL.init(fileURLWithPath:))
     }
 
-    /// Only initialize, account/read, and account/rateLimits/read are sent. No inference turn is created.
+    /// Read-only account, quota and daily activity calls. Never redeems a reset.
     public static func fetch(executable override: URL? = nil, timeout: TimeInterval = 30) throws -> UsageSnapshot {
         guard let binary = override ?? executable() else { throw UsageError.missingCodex }
         let process = Process()
@@ -70,13 +72,16 @@ public enum CodexClient {
             data.append(10)
             try input.fileHandleForWriting.write(contentsOf: data)
         }
-        try send(["id": 1, "method": "initialize", "params": ["clientInfo": ["name": "agent_pace", "title": "Agent Pace", "version": "1.2.0"]]])
+        try send(["id": 1, "method": "initialize", "params": ["clientInfo": ["name": "agent_pace", "title": "Agent Pace", "version": "1.3.0"]]])
         var buffer = Data()
         var accountKey: String?
+        var quota: UsageSnapshot?
+        var activityDeadline = Double.infinity
         let deadline = ProcessInfo.processInfo.systemUptime + timeout
         let fd = output.fileHandleForReading.fileDescriptor
         _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
         while ProcessInfo.processInfo.systemUptime < deadline {
+            if let quota, ProcessInfo.processInfo.systemUptime >= activityDeadline { return quota }
             var event = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
             let ready = poll(&event, 1, 200)
             if ready < 0 && errno == EINTR { continue }
@@ -84,7 +89,10 @@ public enum CodexClient {
                 var bytes = [UInt8](repeating: 0, count: 8192)
                 let count = read(fd, &bytes, bytes.count)
                 if count > 0 { buffer.append(contentsOf: bytes.prefix(count)) }
-                if count == 0 { throw UsageError.exited }
+                if count == 0 {
+                    if let quota { return quota }
+                    throw UsageError.exited
+                }
                 if buffer.count > 4_000_000 { throw UsageError.invalidResponse }
                 while let newline = buffer.firstIndex(of: 10) {
                     let line = buffer.prefix(upTo: newline)
@@ -96,6 +104,14 @@ public enum CodexClient {
                         continue
                     }
                     guard let id = message["id"] as? Int else { continue }
+                    // Older app servers can lack history. Keep a valid quota result.
+                    if id == 4, let quota {
+                        let activity = (message["result"] as? [String: Any]).flatMap {
+                            try? JSONDecoder().decode(AccountActivity.self, from: JSONSerialization.data(withJSONObject: $0))
+                        }
+                        return UsageSnapshot(response: quota.response, accountKey: quota.accountKey,
+                                             fetchedAt: quota.fetchedAt, activity: activity?.recent(now: quota.fetchedAt))
+                    }
                     if message["error"] != nil { throw UsageError.server }
                     guard let result = message["result"] as? [String: Any] else { throw UsageError.invalidResponse }
                     switch id {
@@ -116,13 +132,19 @@ public enum CodexClient {
                         guard let accountKey else { throw UsageError.notSignedIn }
                         let data = try JSONSerialization.data(withJSONObject: result)
                         let response = try JSONDecoder().decode(UsageResponse.self, from: data)
-                        return UsageSnapshot(response: response, accountKey: accountKey, fetchedAt: Date())
+                        quota = UsageSnapshot(response: response, accountKey: accountKey, fetchedAt: Date())
+                        activityDeadline = ProcessInfo.processInfo.systemUptime + 5
+                        try send(["id": 4, "method": "account/usage/read"])
                     default: break
                     }
                 }
             }
-            if !process.isRunning { throw UsageError.exited }
+            if !process.isRunning {
+                if let quota { return quota }
+                throw UsageError.exited
+            }
         }
+        if let quota { return quota }
         throw UsageError.timeout
     }
 }

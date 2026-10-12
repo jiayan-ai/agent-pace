@@ -123,7 +123,7 @@ public enum ClaudeClient {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("AgentPace/1.2.0 (local usage viewer)", forHTTPHeaderField: "User-Agent")
+        request.setValue("AgentPace/1.3.0 (local usage viewer)", forHTTPHeaderField: "User-Agent")
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 20
         config.timeoutIntervalForResource = 25

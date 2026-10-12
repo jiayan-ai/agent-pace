@@ -23,6 +23,7 @@ struct Runner {
         let client = ClientTests()
         let providers = ProviderTests()
         let keychain = KeychainTests()
+        let resets = ResetTests()
         let cases: [(String, () throws -> Void)] = [
             ("日预算与逐点扣减", budget.testDailyAllowanceAndOneForOneSubtraction),
             ("超额显示负数且次日不重复扣减", budget.testSpendingBeyondBudgetShowsNegativeBalance),
@@ -45,7 +46,14 @@ struct Runner {
             ("桌面登录加密格式与无效数据", providers.testDesktopEncryptionFixture),
             ("后台钥匙串读取禁用弹窗", keychain.testBackgroundAccessDisablesUIAndRestoresState),
             ("读取失败恢复状态且无法静默时不访问", keychain.testDeniedAccessRestoresStateAndFailedGuardSkipsRead),
-            ("仅显式连接可请求系统授权", keychain.testExplicitConnectionCanAskAndRestoresDisabledState)
+            ("仅显式连接可请求系统授权", keychain.testExplicitConnectionCanAskAndRestoresDisabledState),
+            ("旧版本无历史接口仍能同步额度", client.testUnavailableHistoryDoesNotBreakQuotas),
+            ("Reset 总数、部分明细与未知状态", resets.testResetCountsAndUnknownDetails),
+            ("近月窗口、缺失日期与去重", resets.testRollingMonthAndMissingDays),
+            ("星期偏好、趋势和稀疏历史", resets.testBusyWeekdayAndTrend),
+            ("实际额度、忙闲模式与自然重置建议", resets.testAdviceUsesActualQuotaInsteadOfDailyOverspend),
+            ("过期券与额度重置边界", resets.testExpiringCreditsAndResetBoundaries),
+            ("历史持久化、旧数据迁移与账户隔离", resets.testActivityPersistenceAndAccountIsolation)
         ]
         var failed = 0
         for (name, test) in cases {
