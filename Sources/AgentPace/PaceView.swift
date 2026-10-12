@@ -8,7 +8,6 @@ struct PaceView: View {
     @State private var showExplanation = false
     @State private var loginEnabled = SMAppService.mainApp.status == .enabled
     @State private var loginError: String?
-    @State private var confirmClaudeConnection = false
     private var accent: Color { store.provider == .codex ? Color(red: 0.32, green: 0.35, blue: 0.87) : Color(red: 0.77, green: 0.42, blue: 0.29) }
     private var overBudget: Bool { (store.validBudget?.overBudget ?? 0) > 0 }
     private var balanceColor: Color { overBudget ? .red : accent }
@@ -50,7 +49,7 @@ struct PaceView: View {
                         .font(.system(size: 46, weight: .light)).foregroundStyle(accent)
                     Text(store.isRefreshing ? "正在读取你的额度" : "等待额度数据")
                         .font(.title3.weight(.semibold))
-                    Text(store.error ?? (store.provider == .codex ? "使用这台 Mac 已登录的 ChatGPT / Codex 账户。" : "使用 Claude 桌面应用中 Code 的订阅额度。"))
+                    Text(store.error ?? (store.provider == .codex ? "使用这台 Mac 已登录的 ChatGPT / Codex 账户。" : "登录 Claude 后，自动同步与桌面 Code 共享的订阅额度。"))
                         .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     if !store.isRefreshing {
                         if store.provider == .claude { claudeConnection }
@@ -64,12 +63,6 @@ struct PaceView: View {
         .frame(width: 400)
         .background(Color(nsColor: .windowBackgroundColor))
         .tint(accent)
-        .alert("连接 Claude 桌面", isPresented: $confirmClaudeConnection) {
-            Button("取消", role: .cancel) { }
-            Button("继续连接") { store.connectClaude() }
-        } message: {
-            Text("为了复用 Claude 桌面登录，小工具需要读取钥匙串中的 Claude Safe Storage，加密密钥可用于解密本机登录凭证。这不是仅查看额度的专用授权。\n\n当前代码仅使用登录凭证查询额度，不保存令牌。macOS 可能要求你输入登录钥匙串密码；密码由系统验证。之后会每 5 分钟自动刷新，你可以随时断开连接。")
-        }
     }
 
     private var header: some View {
@@ -182,7 +175,7 @@ struct PaceView: View {
                 Text("每天首次同步时，将剩余额度除以距重置的天数；不足 1 天按 1 天算。当天预算固定，再扣除首次同步之后用掉的额度。")
                 Text("跨天、切换账户或额度重置后重新计算。百分比指总额度的百分点；这是均摊建议，实际使用仍受其他额度窗口限制。")
                 if store.provider == .claude {
-                    Text("Claude 各入口共享订阅额度。使用桌面应用的登录同步；登录过期时请打开 Claude 的 Code 页面后刷新。")
+                    Text("Claude 各入口共享订阅额度。在工具内登录一次后自动同步；登录失效时重新连接即可，无需 Mac 钥匙串密码。")
                     Text("当前 Claude 接口未提供 reset 券或账户月度历史，因此不推测券数，也不生成月度 reset 建议。")
                     if store.claudeEnabled {
                         Button("断开 Claude 连接") { store.disconnectClaude() }
@@ -209,12 +202,12 @@ struct PaceView: View {
     private var claudeConnection: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !store.claudeEnabled {
-                Text("Claude 尚未连接。连接前会说明需要的登录权限。")
+                Text("首次在工具的 Claude 网页窗口登录，之后自动同步。无需 Mac 钥匙串密码。")
                     .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 12) {
-                Button("连接 Claude 桌面") { confirmClaudeConnection = true }
-                    .buttonStyle(.borderedProminent).disabled(store.isRefreshing)
+                Button(store.disconnectingClaude ? "正在断开…" : "连接 Claude") { store.connectClaude() }
+                    .buttonStyle(.borderedProminent).disabled(store.disconnectingClaude)
                 Button("打开 Claude") { store.openClaude() }.buttonStyle(.link)
             }
         }.font(.caption)
@@ -227,8 +220,10 @@ struct PaceView: View {
                     Image(systemName: "arrow.clockwise")
                     Text(store.isRefreshing ? "同步中…" : "刷新")
                 }
-            }.disabled(store.isRefreshing).buttonStyle(.plain)
-            Text(store.provider == .claude && !store.claudeEnabled ? "连接后自动同步" : store.snapshot.map { "\(localTime($0.fetchedAt)) 更新 · 每 5 分钟同步" } ?? "自动同步")
+            }.disabled(store.isRefreshing || (store.provider == .claude && (!store.claudeEnabled || store.claudeNeedsLogin))).buttonStyle(.plain)
+            Text(store.provider == .claude && (!store.claudeEnabled || store.claudeNeedsLogin)
+                 ? "等待连接 Claude"
+                 : store.snapshot.map { "\(localTime($0.fetchedAt)) 更新 · 每 5 分钟同步" } ?? "自动同步")
                 .foregroundStyle(.tertiary).font(.system(size: 10))
             Spacer(minLength: 0)
             Menu {

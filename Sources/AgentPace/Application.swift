@@ -168,7 +168,18 @@ struct AgentPaceApplication {
         // Small diagnostic command for verifying the real account integration without starting the UI.
         if CommandLine.arguments.contains("--check-connection") || CommandLine.arguments.contains("--check-claude") {
             do {
-                let snapshot = try CommandLine.arguments.contains("--check-claude") ? ClaudeClient.fetch() : CodexClient.fetch()
+                let snapshot: UsageSnapshot
+                if CommandLine.arguments.contains("--check-claude") {
+                    let app = NSApplication.shared
+                    app.setActivationPolicy(.prohibited)
+                    let session = ClaudeWebSession()
+                    var reply: Result<UsageSnapshot, Error>?
+                    session.fetch { reply = $0; app.stop(nil)
+                        if let event = NSEvent.otherEvent(with: .applicationDefined, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, subtype: 0, data1: 0, data2: 0) { app.postEvent(event, atStart: true) }
+                    }
+                    withExtendedLifetime(session) { app.run() }
+                    snapshot = try reply!.get()
+                } else { snapshot = try CodexClient.fetch() }
                 for item in snapshot.response.windows {
                     let budget = DailyBudget.reconcile(previous: nil, window: item.window, now: snapshot.fetchedAt)
                     print("\(item.label): 剩余 \(item.window.remaining.map(number) ?? "未知")%; 日均 \(budget.map { number($0.allowance) } ?? "未知")%; 重置 \(item.window.resetDate.map(resetTime) ?? "未知")")

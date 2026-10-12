@@ -21,7 +21,7 @@ A native macOS menu bar app that turns your remaining Codex / Claude subscriptio
 
 面板顶部的开关可切换 **Codex / Claude Code**，菜单栏随之显示「Codex 14.3%」或「Claude 16.8%」一类的数字，点击查看详情。首次运行会自动打开独立窗口；之后可以从面板右下角的菜单再次打开窗口。关闭窗口后，小工具继续在菜单栏运行。
 
-需要 macOS 13 或更新版本，并已安装、登录 ChatGPT / Codex 桌面应用，或 Codex CLI。下载包包含 Apple Silicon 和 Intel 两种架构；已在 Apple Silicon 上运行验证，Intel 尚未实机验证。应用使用本机现有的 Codex 登录状态，不需要填写 API Key。Claude 使用 **Claude 桌面应用中 Code 的登录**，不要求登录终端版。
+需要 macOS 13 或更新版本，并已安装、登录 ChatGPT / Codex 桌面应用，或 Codex CLI。下载包包含 Apple Silicon 和 Intel 两种架构；已在 Apple Silicon 上运行验证，Intel 尚未实机验证。应用使用本机现有的 Codex 登录状态，不需要填写 API Key。Claude 需要在 **Agent Pace 的连接窗口中登录一次**，之后复用会话自动刷新；无需登录终端版，也不访问 Claude Safe Storage。请使用与 Claude 桌面 Code 相同的账户。
 
 已连接的平台每 5 分钟各自同步一次；切换会保留各自的今日预算、已用记录和所选额度窗口。也可手动刷新。系统从睡眠中醒来会刷新。可以在「怎么算出来的」中选择登录 Mac 时启动。
 
@@ -68,17 +68,19 @@ Claude 当前使用的接口没有提供 reset 券或月度账户历史，因此
 
 ## 数据与隐私
 
+Agent Pace 不需要 macOS「App 管理」（更新或删除其他应用）权限，也没有应用安装或自动更新功能。可关闭系统设置中的这项授权；「登录 Mac 时启动」是单独的可选登录项设置。
+
 使用官方 [Codex App Server 接口](https://learn.chatgpt.com/docs/app-server)：`initialize`、`account/read`、`account/rateLimits/read`、`account/usage/read`。不会调用 `turn/start` 或 `account/rateLimitResetCredit/consume`，不会创建聊天、发起模型推理或消耗重置券。
 
 Codex 由已安装的 Codex 程序管理登录，小工具不读取其认证令牌。账户标识（ID 或邮箱）与工作区路由仅取哈希用于区分预算；不保存明文邮箱。额度快照、每日基线、reset 券信息和近 30 天日用量保存在 `~/Library/Application Support/CodexPace/state.json`，沿用旧名称以保留升级前的记录。历史只在本机分析，不上传给其他服务。错误信息不记录原始服务响应。
 
-Claude 读取桌面应用 `config.json` 中的加密 OAuth 缓存，仅在内存中使用登录令牌，通过 `api.anthropic.com/api/oauth/usage` 和 `/api/oauth/profile` 查询额度与核对账户。解密通过 macOS 钥匙串中指定的 `Claude Safe Storage` 项目。不会保存令牌、轮换登录或修改 Claude 的配置，也不读取浏览器 Cookie。
+Claude 使用 Agent Pace 自己的 WebKit 网页会话。点击「连接 Claude」，在 `https://claude.ai` 完成一次登录，然后点「同步额度」。与桌面 Code 使用同一账户即可查看共享的订阅额度；不读取 Claude 桌面的配置、OAuth 缓存、Safe Storage 或其他浏览器的 Cookie，也不会请求 Mac 钥匙串密码。旧版桌面连接不会自动迁移，需要重新连接一次。
 
-首次使用默认不连接 Claude，也不访问其钥匙串。点击「连接 Claude 桌面」，阅读权限说明并选择「继续连接」后，才会请求系统授权。后台查询禁止弹出钥匙串对话框；没有权限时停止自动连接，等待用户手动重连。可在「怎么算出来的」中断开 Claude，停止后续访问；这不会撤销在系统钥匙串中已经授予的权限。
+会话由 WebKit 保存在 Agent Pace 的本地网站数据中，重启后可继续使用。额度同步仅对 `claude.ai` 发起组织列表和 usage 的 GET 请求；桥接给本机预算计算的内容仅包含组织标识、名称及额度窗口，不提取 Cookie 或密码。网页登录本身具有正常 Claude 账户权限，并非官方提供的「额度专用」授权。组织标识仅以哈希写入预算历史，所选组织 UUID 保存在本机偏好中。多组织账户需要明确选择；已选组织消失时不会默默改用另一个。
 
-**授权范围：** `Claude Safe Storage` 是解密本机 Claude 登录资料所用的密钥，权限范围大于「只查看额度」。当前代码只用登录令牌查询额度与核对账户，这不是官方提供的额度专用授权。系统弹窗要求的是登录钥匙串密码，通常与 Mac 登录密码相同，密码由 macOS 处理。选择拒绝不会影响 Codex 功能。
+在「怎么算出来的」中断开连接，会停止同步并删除 Agent Pace 的网站会话；不会退出 Claude 桌面或其他浏览器的登录。登录失效、网页要求验证时停止后台重试并提示重新连接；限流时按服务端提示退避。网络失败仍保留上次记录，并明确标记为未确认。
 
-Claude 的接口和桌面缓存格式并非稳定的第三方公开协议，升级可能需要适配。登录过期时，在 Claude 桌面应用进入 Code 并完成登录，再点刷新。没有有效数据时显示待同步或上次记录，不猜测重置时间。Claude 各入口共享订阅额度；此处显示的是订阅额度，不能单独分离桌面 Code 的消耗。
+Claude 的 usage 接口并非稳定的第三方公开 API，网页升级可能需要适配。Claude 或登录服务可能要求人工验证；若验证不支持内置浏览器，工具会保持未连接，不退回钥匙串解密或绕过网站验证。没有有效数据时显示待同步或上次记录，不猜测重置时间。Claude 各入口共享订阅额度；此处显示的是订阅额度，不能单独分离桌面 Code 的消耗。
 
 ## 从源码构建
 
@@ -103,20 +105,20 @@ open "dist/Agent Pace.app"
 bash scripts/package-release.sh
 ```
 
-验证真实账户连接：
+验证真实账户连接（Claude 需先在工具内完成登录；诊断命令不会打开登录窗口）：
 
 ```sh
 "dist/Agent Pace.app/Contents/MacOS/AgentPace" --check-connection
 "dist/Agent Pace.app/Contents/MacOS/AgentPace" --check-claude
 ```
 
-没有第三方依赖。使用 SwiftUI + AppKit，构建产物采用本机临时签名，未进行 App Store 分发或公证。自动发现 ChatGPT / Codex 标准安装路径及常见 CLI 路径；如果升级后的应用改变程序位置，需要更新发现逻辑。
+没有第三方依赖。使用 SwiftUI + AppKit + WebKit，构建产物采用本机临时签名，未进行 App Store 分发或公证。自动发现 ChatGPT / Codex 标准安装路径及常见 CLI 路径；如果升级后的应用改变程序位置，需要更新发现逻辑。
 
 Developer ID 签名、公证提交及票据装订流程见 [签名与公证](docs/NOTARIZATION.md)。脚本准备好并不等于 Apple 已接受公证；只有验收全部通过的产物才会带 `-notarized.zip` 后缀。
 
 ## 开发与反馈
 
-自动检查在 macOS 上运行计算、数据解析、账户隔离和钥匙串交互测试，并构建应用。测试使用合成数据，不需要登录账户。
+自动检查在 macOS 上运行计算、数据解析、账户隔离和网页会话桥接测试，并构建应用。测试使用合成数据，不需要登录账户。
 
 报告问题时可附 macOS 版本、应用版本和错误提示；请勿提交登录令牌、钥匙串密钥、Claude 配置文件或完整个人用量记录。
 
@@ -124,4 +126,4 @@ Developer ID 签名、公证提交及票据装订流程见 [签名与公证](doc
 
 ## 退出与移除
 
-点击面板右下角菜单 →「退出 Agent Pace」。如启用了登录启动，先关闭该选项，再删除应用。删除上述 Application Support 下的 `CodexPace` 文件夹可清除本地预算记录。
+点击面板右下角菜单 →「退出 Agent Pace」。如启用了登录启动，先关闭该选项，再删除应用。删除上述 Application Support 下的 `CodexPace` 文件夹可清除本地预算记录。卸载前可先断开 Claude，以清除本工具保存的网页会话。

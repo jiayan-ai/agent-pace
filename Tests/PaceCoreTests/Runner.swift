@@ -22,8 +22,8 @@ struct Runner {
         let budget = BudgetTests()
         let client = ClientTests()
         let providers = ProviderTests()
-        let keychain = KeychainTests()
         let resets = ResetTests()
+        let web = ClaudeWebTests()
         let cases: [(String, () throws -> Void)] = [
             ("日预算与逐点扣减", budget.testDailyAllowanceAndOneForOneSubtraction),
             ("超额显示负数且次日不重复扣减", budget.testSpendingBeyondBudgetShowsNegativeBalance),
@@ -42,11 +42,10 @@ struct Runner {
             ("切换平台、异步返回与独立预算", providers.testProviderIsolationAndPersistence),
             ("升级保留旧版超额记录", providers.testLegacyMigrationPreservesNegativeBalance),
             ("重置时间秒级浮动不清零当天记录", providers.testResetTimestampJitterKeepsDailySpending),
-            ("桌面登录账户、组织与有效期", providers.testDesktopCredentialIdentityAndExpiry),
-            ("桌面登录加密格式与无效数据", providers.testDesktopEncryptionFixture),
-            ("后台钥匙串读取禁用弹窗", keychain.testBackgroundAccessDisablesUIAndRestoresState),
-            ("读取失败恢复状态且无法静默时不访问", keychain.testDeniedAccessRestoresStateAndFailedGuardSkipsRead),
-            ("仅显式连接可请求系统授权", keychain.testExplicitConnectionCanAskAndRestoresDisabledState),
+            ("Claude 网页账户校验与状态错误", web.testWebIdentityAndMissingFields),
+            ("Claude 网页来源约束", web.testOriginValidation),
+            ("网页桥接只返回额度并要求明确选择组织", web.testBridgeOnlyReturnsUsageAndRequiresOrganizationChoice),
+            ("网页登录失效、验证和限流", web.testBridgeAuthExpiryChallengeAndRateLimit),
             ("旧版本无历史接口仍能同步额度", client.testUnavailableHistoryDoesNotBreakQuotas),
             ("Reset 总数、部分明细与未知状态", resets.testResetCountsAndUnknownDetails),
             ("近月窗口、缺失日期与去重", resets.testRollingMonthAndMissingDays),

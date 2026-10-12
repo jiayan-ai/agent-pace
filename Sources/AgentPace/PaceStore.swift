@@ -10,7 +10,10 @@ final class PaceStore: ObservableObject {
     @Published private var verified: Set<UsageProvider> = []
     @Published var now = Date()
     @Published var persistenceError: String?
-    @Published private(set) var claudeEnabled = UserDefaults.standard.bool(forKey: "claudeDesktopConnectionEnabled")
+    @Published private(set) var claudeEnabled = UserDefaults.standard.bool(forKey: "claudeWebConnectionEnabled")
+    @Published private(set) var claudeNeedsLogin = false
+    @Published private(set) var disconnectingClaude = false
+    private let claudeSession = ClaudeWebSession()
     var onChange: (() -> Void)?
     private var timer: Timer?
     private var wakeObserver: NSObjectProtocol?
@@ -91,64 +94,76 @@ final class PaceStore: ObservableObject {
     func refreshAll() { for provider in UsageProvider.allCases { refresh(provider: provider) } }
     func refresh() { refresh(provider: provider) }
     func connectClaude() {
+        guard !disconnectingClaude else { return }
         claudeEnabled = true
-        UserDefaults.standard.set(true, forKey: "claudeDesktopConnectionEnabled")
-        refresh(provider: .claude, allowKeychainPrompt: true)
+        UserDefaults.standard.set(true, forKey: "claudeWebConnectionEnabled")
+        claudeSession.showLogin { [weak self] in
+            self?.claudeNeedsLogin = false
+            self?.refresh(provider: .claude)
+        }
     }
     func disconnectClaude() {
         claudeEnabled = false
-        UserDefaults.standard.set(false, forKey: "claudeDesktopConnectionEnabled")
+        disconnectingClaude = true
+        UserDefaults.standard.set(false, forKey: "claudeWebConnectionEnabled")
         verified.remove(.claude)
         errors[.claude] = nil
+        retryAfter[.claude] = nil
+        claudeNeedsLogin = false
+        claudeSession.disconnect { [weak self] in
+            self?.disconnectingClaude = false
+            self?.onChange?()
+        }
         onChange?()
     }
     func openClaude() {
         NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Claude.app"))
     }
 
-    private func refresh(provider: UsageProvider, allowKeychainPrompt: Bool = false) {
-        // No Claude credential access at all until the user explicitly connects.
-        guard provider != .claude || claudeEnabled else { return }
+    private func refresh(provider: UsageProvider) {
+        guard provider != .claude || (claudeEnabled && !claudeNeedsLogin && !disconnectingClaude) else { return }
         guard !refreshing.contains(provider), Date() >= (retryAfter[provider] ?? .distantPast) else { return }
         refreshing.insert(provider)
         lastAttempt[provider] = Date()
         onChange?()
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let result = Result {
-                switch provider {
-                case .codex: return try CodexClient.fetch()
-                case .claude: return try ClaudeClient.fetch(allowKeychainPrompt: allowKeychainPrompt)
-                }
-            }
-            Task { @MainActor in
-                guard let self else { return }
-                self.refreshing.remove(provider)
-                self.now = Date()
-                // Disabling the connection also discards any in-flight result.
-                guard provider != .claude || self.claudeEnabled else { return }
-                switch result {
-                case .success(let current):
-                    self.errors[provider] = nil
-                    self.retryAfter[provider] = nil
-                    self.verified.insert(provider)
-                    // Commit to the provider that started this request, even if
-                    // the user has switched the toggle while it was loading.
-                    self.history[provider].ingest(current)
-                    self.persist()
-                case .failure(let failure):
-                    self.errors[provider] = (failure as? LocalizedError)?.errorDescription ?? "额度同步失败，请稍后重试。"
-                    if case ClaudeUsageError.keychainPermission = failure {
-                        self.claudeEnabled = false
-                        UserDefaults.standard.set(false, forKey: "claudeDesktopConnectionEnabled")
-                        self.verified.remove(.claude)
-                    }
-                    if case ClaudeUsageError.throttled(let seconds) = failure {
-                        self.retryAfter[provider] = Date().addingTimeInterval(seconds)
-                    }
-                }
-                self.onChange?()
+        if provider == .claude {
+            claudeSession.fetch { [weak self] result in self?.complete(result, provider: .claude) }
+        } else {
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let result = Result { try CodexClient.fetch() }
+                Task { @MainActor in self?.complete(result, provider: .codex) }
             }
         }
+    }
+
+    private func complete(_ result: Result<UsageSnapshot, Error>, provider: UsageProvider) {
+        refreshing.remove(provider)
+        now = Date()
+        guard provider != .claude || claudeEnabled else { onChange?(); return }
+        switch result {
+        case .success(let current):
+            errors[provider] = nil
+            retryAfter[provider] = nil
+            verified.insert(provider)
+            if provider == .claude { claudeNeedsLogin = false }
+            // Commit to the provider that started this request, even if the
+            // visible toggle changed while it was loading.
+            history[provider].ingest(current)
+            persist()
+        case .failure(let failure):
+            errors[provider] = (failure as? LocalizedError)?.errorDescription ?? "额度同步失败，请稍后重试。"
+            if let error = failure as? ClaudeUsageError {
+                switch error {
+                case .notSignedIn, .expired, .scopeMissing, .ambiguousAccount:
+                    claudeNeedsLogin = true
+                    verified.remove(.claude)
+                case .throttled(let seconds):
+                    retryAfter[provider] = Date().addingTimeInterval(seconds)
+                default: break
+                }
+            }
+        }
+        onChange?()
     }
 
     private func persist() {

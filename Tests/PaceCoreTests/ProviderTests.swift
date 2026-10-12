@@ -79,35 +79,4 @@ struct ProviderTests {
         try expect(reset.consumed == 0)
     }
 
-    func cache(organization: String? = nil, accountID: String? = nil, host: String = "https://api.anthropic.com", expired: Bool = false) -> [String: [String: Any]] {
-        let key = "acct:\(accountID ?? account)|client:\(organization ?? org):\(host):user:inference user:profile user:sessions:claude_code"
-        return [key: ["token": "synthetic-fixture", "expiresAt": date.addingTimeInterval(expired ? -1 : 3600).timeIntervalSince1970 * 1000]]
-    }
-
-    func testDesktopCredentialIdentityAndExpiry() throws {
-        func encoded(_ cache: [String: [String: Any]]) throws -> Data { try JSONSerialization.data(withJSONObject: cache) }
-        let credential = try ClaudeDesktopLogin.credential(from: encoded(cache()), account: account, now: date)
-        try expect(credential.account == account && credential.organization == org)
-        try expectThrows { try ClaudeDesktopLogin.credential(from: encoded(cache(expired: true)), account: account, now: date) }
-        try expectThrows { try ClaudeDesktopLogin.credential(from: encoded(cache(accountID: org)), account: account, now: date) }
-        try expectThrows { try ClaudeDesktopLogin.credential(from: encoded(cache(host: "https://example.com")), account: account, now: date) }
-        var ambiguous = cache()
-        ambiguous.merge(cache(organization: account)) { _, new in new }
-        try expectThrows { try ClaudeDesktopLogin.credential(from: encoded(ambiguous), account: account, now: date) }
-    }
-
-    func testDesktopEncryptionFixture() throws {
-        // Fixture independently produced with OpenSSL AES-128-CBC + Python PBKDF2.
-        let encrypted = Data(base64Encoded: "djEww2Eb9+v/+ttq7ayrFzwVkAGDy82X1F8NmAv2Voth6/0=")!
-        let decoded = try ClaudeDesktopLogin.decrypt(encrypted, password: Data("fixture-password".utf8))
-        try expect(String(data: decoded, encoding: .utf8) == #"{"fixture":"desktop-login"}"#)
-        // CBC is not authenticated: a wrong key can happen to have valid padding.
-        // The following JSON/account validation must still reject its plaintext.
-        let wrong = try? ClaudeDesktopLogin.decrypt(encrypted, password: Data("wrong-password".utf8))
-        try expect(wrong != decoded)
-        if let wrong {
-            try expectThrows { try ClaudeDesktopLogin.credential(from: wrong, account: account, now: date) }
-        }
-        try expectThrows { try ClaudeDesktopLogin.decrypt(Data("v20unknown".utf8), password: Data()) }
-    }
 }
