@@ -18,12 +18,13 @@ func expectThrows<T>(_ operation: () throws -> T) throws {
 
 @main
 struct Runner {
-    static func main() {
+    static func main() async {
         let budget = BudgetTests()
         let client = ClientTests()
         let providers = ProviderTests()
         let resets = ResetTests()
         let web = ClaudeWebTests()
+        let radar = ResetRadarTests()
         let cases: [(String, () throws -> Void)] = [
             ("日预算与逐点扣减", budget.testDailyAllowanceAndOneForOneSubtraction),
             ("超额显示负数且次日不重复扣减", budget.testSpendingBeyondBudgetShowsNegativeBalance),
@@ -39,6 +40,8 @@ struct Runner {
             ("连接超时与进程退出", client.testTimeoutIsBounded),
             ("Claude 周额度、小时额度与精确重置时间", providers.testClaudeWindowsAndDates),
             ("Claude 缺失重置时间不虚构预算", providers.testClaudeMissingResetDoesNotInventBudget),
+            ("Fable 周额度、独立预算与选择持久化", providers.testFableWeeklyBudgetIsIndependentOfOverallWeeklyBudget),
+            ("Fable 缺失与零用量", providers.testFableMissingAndZeroUsage),
             ("切换平台、异步返回与独立预算", providers.testProviderIsolationAndPersistence),
             ("升级保留旧版超额记录", providers.testLegacyMigrationPreservesNegativeBalance),
             ("重置时间秒级浮动不清零当天记录", providers.testResetTimestampJitterKeepsDailySpending),
@@ -46,20 +49,30 @@ struct Runner {
             ("Claude 网页来源约束", web.testOriginValidation),
             ("网页桥接只返回额度并要求明确选择组织", web.testBridgeOnlyReturnsUsageAndRequiresOrganizationChoice),
             ("网页登录失效、验证和限流", web.testBridgeAuthExpiryChallengeAndRateLimit),
+            ("网页桥接保留 Fable 额度并过滤无关字段", web.testBridgeIncludesFableWithoutLeakingOtherFields),
+            ("Fable 模型范围、零用量和重复条目", web.testFableScopeZeroMissingAndAmbiguousRows),
             ("旧版本无历史接口仍能同步额度", client.testUnavailableHistoryDoesNotBreakQuotas),
             ("Reset 总数、部分明细与未知状态", resets.testResetCountsAndUnknownDetails),
             ("近月窗口、缺失日期与去重", resets.testRollingMonthAndMissingDays),
             ("星期偏好、趋势和稀疏历史", resets.testBusyWeekdayAndTrend),
             ("实际额度、忙闲模式与自然重置建议", resets.testAdviceUsesActualQuotaInsteadOfDailyOverspend),
             ("过期券与额度重置边界", resets.testExpiringCreditsAndResetBoundaries),
-            ("历史持久化、旧数据迁移与账户隔离", resets.testActivityPersistenceAndAccountIsolation)
+            ("历史持久化、旧数据迁移与账户隔离", resets.testActivityPersistenceAndAccountIsolation),
+            ("全局 reset、发券与来源核验等级", radar.testRecordedConfirmedAndBankedAreDistinct),
+            ("Tibo 动态跨时区和午夜归属", radar.testTodayUsesLocalDayInsteadOfUpstreamUTCStatus),
+            ("HTTP 成功不掩盖过期、失败及未知来源", radar.testFreshHTTPDoesNotHideStaleOrFailedSource),
+            ("Reset 预告、未来记录与日期精度", radar.testPlannedFutureAndDateOnlyNeverClaimDelivery),
+            ("未知记录与不可信来源链接", radar.testUnknownRecordsAndUntrustedLinksAreExcluded),
+            ("Reset 缓存、去重与损坏响应", radar.testCacheAndMalformedResponses)
         ]
         var failed = 0
         for (name, test) in cases {
             do { try test(); print("PASS \(name)") }
             catch { failed += 1; print("FAIL \(name): \(error)") }
         }
-        print("\(cases.count - failed)/\(cases.count) checks passed")
+        do { try await radar.testPublicTransportAndFailureHandling(); print("PASS 公开只读请求与失败隔离") }
+        catch { failed += 1; print("FAIL 公开只读请求与失败隔离: \(error)") }
+        print("\(cases.count + 1 - failed)/\(cases.count + 1) checks passed")
         exit(failed == 0 ? 0 : 1)
     }
 }

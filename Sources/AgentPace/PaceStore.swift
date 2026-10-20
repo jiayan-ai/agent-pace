@@ -13,6 +13,14 @@ final class PaceStore: ObservableObject {
     @Published private(set) var claudeEnabled = UserDefaults.standard.bool(forKey: "claudeWebConnectionEnabled")
     @Published private(set) var claudeNeedsLogin = false
     @Published private(set) var disconnectingClaude = false
+    @Published private(set) var resetRadar: ResetRadarSnapshot?
+    @Published private(set) var resetRadarRefreshing = false
+    @Published private(set) var resetRadarError: String?
+    @Published private(set) var resetRadarEnabled = UserDefaults.standard.object(forKey: "resetRadarEnabled") as? Bool ?? true
+    @Published private var resetRadarVerified = false
+    private var resetRadarTask: Task<Void, Never>?
+    private var resetRadarAttempt: Date?
+    private let resetRadarCacheURL: URL
     private let claudeSession = ClaudeWebSession()
     var onChange: (() -> Void)?
     private var timer: Timer?
@@ -24,6 +32,11 @@ final class PaceStore: ObservableObject {
     init() {
         cacheURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("CodexPace/state.json")
+        resetRadarCacheURL = cacheURL.deletingLastPathComponent().appendingPathComponent("reset-radar.json")
+        if let data = try? Data(contentsOf: resetRadarCacheURL), data.count <= ResetRadarClient.maximumBytes,
+           let saved = try? JSONDecoder().decode(ResetRadarSnapshot.self, from: data) {
+            resetRadar = saved
+        }
         if let data = try? Data(contentsOf: cacheURL), let saved = try? JSONDecoder().decode(PaceHistory.self, from: data) {
             history = saved
         }
@@ -40,6 +53,9 @@ final class PaceStore: ObservableObject {
                     if self.now.timeIntervalSince(self.lastAttempt[provider] ?? .distantPast) >= interval {
                         self.refresh(provider: provider)
                     }
+                }
+                if self.now.timeIntervalSince(self.resetRadarAttempt ?? .distantPast) >= ResetRadarClient.refreshInterval {
+                    self.refreshResetRadar()
                 }
             }
         }
@@ -70,8 +86,9 @@ final class PaceStore: ObservableObject {
         return budget
     }
     var menuTitle: String {
-        guard let budget = validBudget else { return "\(provider.shortTitle) \(isRefreshing ? "同步中" : "待同步")" }
-        return "\(provider.shortTitle) \(stale ? "≈" : "")\(number(budget.leftToday))%"
+        let title = selected?.bucketID == "claude_fable" ? "Fable" : provider.shortTitle
+        guard let budget = validBudget else { return "\(title) \(isRefreshing ? "同步中" : "待同步")" }
+        return "\(title) \(stale ? "≈" : "")\(number(budget.leftToday))%"
     }
     var daysLeft: Double? { selected?.window.resetDate.map { max(0, $0.timeIntervalSince(now) / 86400) } }
     var usagePattern: UsagePattern { UsagePattern(activity: history[provider].activity, now: now) }
@@ -91,8 +108,54 @@ final class PaceStore: ObservableObject {
         onChange?()
         if stale { refresh() }
     }
-    func refreshAll() { for provider in UsageProvider.allCases { refresh(provider: provider) } }
-    func refresh() { refresh(provider: provider) }
+    func refreshAll() {
+        for provider in UsageProvider.allCases { refresh(provider: provider) }
+        refreshResetRadar()
+    }
+    func refresh() {
+        refresh(provider: provider)
+        if provider == .codex { refreshResetRadar() }
+    }
+    var resetRadarAssessment: ResetRadarAssessment? {
+        resetRadar?.assessment(at: now, failed: resetRadarError != nil || !resetRadarVerified)
+    }
+    var canRefreshResetRadar: Bool {
+        resetRadarEnabled && !resetRadarRefreshing && now.timeIntervalSince(resetRadarAttempt ?? .distantPast) >= ResetRadarClient.minimumInterval
+    }
+    func setResetRadarEnabled(_ enabled: Bool) {
+        resetRadarEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "resetRadarEnabled")
+        if enabled { refreshResetRadar() }
+    }
+    func refreshResetRadar() {
+        guard canRefreshResetRadar else { return }
+        resetRadarRefreshing = true
+        resetRadarAttempt = Date()
+        resetRadarTask = Task { [weak self] in
+            let result: Result<ResetRadarSnapshot, Error>
+            do { result = .success(try await ResetRadarClient.fetch()) }
+            catch { result = .failure(error) }
+            guard let self else { return }
+            self.resetRadarRefreshing = false
+            self.now = Date()
+            // Disabling this public feed never changes an account's quota or budget.
+            guard self.resetRadarEnabled else { return }
+            switch result {
+            case .success(let snapshot):
+                self.resetRadar = snapshot
+                self.resetRadarVerified = true
+                self.resetRadarError = nil
+                // Public cache is independent of account history; cache failure is non-fatal.
+                try? FileManager.default.createDirectory(at: self.resetRadarCacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                if let data = try? JSONEncoder().encode(snapshot) {
+                    try? data.write(to: self.resetRadarCacheURL, options: .atomic)
+                    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: self.resetRadarCacheURL.path)
+                }
+            case .failure(let error):
+                self.resetRadarError = (error as? ResetRadarError)?.errorDescription ?? "Reset 动态暂时无法同步。"
+            }
+        }
+    }
     func connectClaude() {
         guard !disconnectingClaude else { return }
         claudeEnabled = true

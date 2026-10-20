@@ -33,7 +33,10 @@ struct PaceView: View {
                     Label("等待最新额度，确认今天的预算", systemImage: "clock.arrow.circlepath")
                         .font(.callout).foregroundStyle(.secondary)
                 }
-                if store.provider == .codex { ResetInsightsView(store: store) }
+                if store.provider == .codex {
+                    ResetRadarView(store: store)
+                    ResetInsightsView(store: store)
+                }
                 if store.stale {
                     Label("显示上次记录，尚未确认最新额度", systemImage: "exclamationmark.circle")
                         .font(.caption).foregroundStyle(.orange)
@@ -56,6 +59,7 @@ struct PaceView: View {
                         else { Button("重新同步") { store.refresh() }.buttonStyle(.borderedProminent).tint(accent) }
                     }
                 }.frame(maxWidth: .infinity).padding(.vertical, 45)
+                if store.provider == .codex { ResetRadarView(store: store) }
             }
             footer
         }
@@ -99,8 +103,13 @@ struct PaceView: View {
                     .font(.system(size: 62, weight: .medium, design: .rounded)).monospacedDigit()
                 Text("%").font(.system(size: 28, weight: .regular, design: .rounded))
             }.foregroundStyle(balanceColor).accessibilityElement(children: .combine)
-            Text("占这个周期总额度的百分比")
+            Text(store.selected?.bucketID == "claude_fable" ? "占 Fable 周额度的百分比" : "占这个周期总额度的百分比")
                 .font(.caption).foregroundStyle(.secondary)
+            if store.selected?.bucketID == "claude_fable" {
+                Text("Fable 使用也计入总周额度，仍受总周额度和 5 小时额度限制。")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)

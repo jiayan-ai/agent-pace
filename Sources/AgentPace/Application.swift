@@ -2,23 +2,12 @@ import AppKit
 import SwiftUI
 import PaceCore
 
-private final class MenuPanel: NSPanel {
-    var dismiss: (() -> Void)?
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
-    override func cancelOperation(_ sender: Any?) { dismiss?() }
-}
-
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     let store = PaceStore()
     private var statusItem: NSStatusItem!
-    private var menuPanel: MenuPanel?
-    private var localMonitor: Any?
-    private var globalMonitor: Any?
+    private let popover = NSPopover()
     private var screenObserver: NSObjectProtocol?
-    private var menuObservers: [NSObjectProtocol] = []
-    private var trackingMenu = false
     private var window: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -31,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
             button.target = self
             button.action = #selector(togglePopover)
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             button.toolTip = "Agent Pace · 今天还可用的额度"
         }
         screenObserver = NotificationCenter.default.addObserver(
@@ -38,29 +28,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             Task { @MainActor in self?.hideMenu() }
         }
-        menuObservers = [
-            NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.trackingMenu = true }
-            },
-            NotificationCenter.default.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.trackingMenu = false }
-            }
-        ]
+        popover.behavior = .transient
+        popover.animates = false
+        popover.delegate = self
         store.onChange = { [weak self] in self?.updateStatusItem() }
         store.onChange?()
+        if CommandLine.arguments.contains("--check-menu") {
+            Task { await checkMenu() }
+            return
+        }
         store.refreshAll()
         let defaults = UserDefaults.standard
         if !defaults.bool(forKey: "hasLaunched") || CommandLine.arguments.contains("--show-window") {
             showWindow()
             defaults.set(true, forKey: "hasLaunched")
-        } else {
-            // Reopening the app gives immediate access to its menu-bar panel.
-            DispatchQueue.main.async { [weak self] in self?.showMenu() }
         }
+        // Normal startup leaves the menu closed. The first status-button click
+        // opens it exactly once, after the status item has joined its window.
     }
 
     @objc private func togglePopover() {
-        if menuPanel?.isVisible == true { hideMenu() }
+        if popover.isShown { hideMenu() }
         else { showMenu() }
     }
 
@@ -75,68 +63,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showMenu() {
-        guard let button = statusItem.button, let buttonWindow = button.window,
-              let screen = buttonWindow.screen ?? NSScreen.main else { return }
-        hideMenu()
+        guard !popover.isShown, let button = statusItem.button, button.window != nil,
+              let screen = button.window?.screen ?? NSScreen.main else { return }
         store.now = Date()
-
-        // Use screen coordinates and a bounded viewport. A hosting controller's
-        // changing intrinsic height must never reposition the panel above the bar.
-        let available = screen.visibleFrame.insetBy(dx: 8, dy: 8)
-        let size = NSSize(width: min(400, available.width), height: min(600, available.height))
-        let anchor = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
-        let x = min(max(anchor.midX - size.width / 2, available.minX), available.maxX - size.width)
-        let y = min(max(anchor.minY - 6 - size.height, available.minY), available.maxY - size.height)
-
-        let panel = MenuPanel(contentRect: NSRect(origin: NSPoint(x: x, y: y), size: size),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
-        panel.title = "Agent Pace · 今日额度"
-        panel.isReleasedWhenClosed = false
-        panel.level = .popUpMenu
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = true
-        panel.dismiss = { [weak self] in self?.hideMenu() }
+        let size = NSSize(width: min(400, screen.visibleFrame.width - 16),
+                          height: min(600, screen.visibleFrame.height - 32))
         let content = ScrollView(.vertical) {
             PaceView(store: store, openWindow: { [weak self] in self?.showWindow() })
         }
         .frame(width: size.width, height: size.height, alignment: .top)
         .background(Color(nsColor: .windowBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        let host = NSHostingView(rootView: content)
-        // AppKit owns the frame; SwiftUI content can grow only inside the scroll view.
+        let host = NSHostingController(rootView: content)
         host.sizingOptions = []
-        panel.contentView = host
-        panel.setFrame(NSRect(origin: NSPoint(x: x, y: y), size: size), display: false)
-        menuPanel = panel
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
+        popover.contentViewController = host
+        popover.contentSize = size
+        // AppKit owns outside-click dismissal, focus, and nested Picker/Menu
+        // tracking. Do not activate the app or install competing event monitors.
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        button.highlight(true)
+    }
 
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            self?.hideMenu()
+    private func hideMenu() { popover.performClose(nil) }
+
+    func popoverDidClose(_ notification: Notification) {
+        statusItem.button?.highlight(false)
+    }
+
+    // Exercises real AppKit status-button actions across run-loop turns. It does
+    // not fetch accounts or change saved preferences and needs a macOS desktop.
+    private func checkMenu() async {
+        func fail(_ message: String) -> Never { fputs("FAIL \(message)\n", stderr); exit(1) }
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        guard let button = statusItem.button, button.window != nil, !popover.isShown else {
+            fail("Startup must leave a ready status button and a closed popover")
         }
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-            guard let self else { return event }
-            // AppKit must finish tracking Picker/Menu popups itself. Closing
-            // their parent here can leave a hidden menu still tracking input.
-            guard !self.trackingMenu else { return event }
-            if event.window !== self.menuPanel,
-               event.window !== self.statusItem.button?.window {
-                self.hideMenu()
+        for cycle in 1...3 {
+            button.performClick(nil)
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard popover.isShown, let popupWindow = popover.contentViewController?.view.window, popupWindow.isVisible else {
+                fail("Click \(cycle) did not keep the details visible")
             }
-            return event
+            guard let screen = popupWindow.screen, screen.frame.contains(popupWindow.frame) else {
+                fail("Popover extends beyond the screen")
+            }
+            updateStatusItem()
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            guard popover.isShown else { fail("Status update closed the popover") }
+            button.performClick(nil)
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            guard !popover.isShown else { fail("Second click did not close the popover") }
         }
+        print("PASS 菜单栏冷启动、连续三次展开/收起、更新时保持显示及屏幕边界")
+        exit(0)
     }
-
-    private func hideMenu() {
-        menuPanel?.orderOut(nil)
-        menuPanel = nil
-        if let localMonitor { NSEvent.removeMonitor(localMonitor); self.localMonitor = nil }
-        if let globalMonitor { NSEvent.removeMonitor(globalMonitor); self.globalMonitor = nil }
-    }
-
-    func applicationDidResignActive(_ notification: Notification) { hideMenu() }
 
     func showWindow() {
         hideMenu()
@@ -165,6 +144,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct AgentPaceApplication {
     @MainActor static func main() {
+        if CommandLine.arguments.contains("--check-reset-radar") {
+            Task {
+                do {
+                    let snapshot = try await ResetRadarClient.fetch()
+                    let assessment = snapshot.assessment(at: Date())
+                    print("Tibo Reset: \(assessment.title)；\(assessment.detail)")
+                    if let updated = snapshot.feed.archiveDate { print("来源更新：\(resetTime(updated))") }
+                    for type in ["global_reset", "banked_reset"] {
+                        if let event = snapshot.feed.latest(type, at: Date()) {
+                            print("\(event.kindLabel)：\(event.dateOnlyLabel ?? event.date.map(resetTime) ?? "未知") · \(event.verificationLabel)")
+                        }
+                    }
+                    print("社区预测：\(ResetRadarLinks.forecast.absoluteString)")
+                    exit(0)
+                } catch {
+                    fputs("\(error.localizedDescription)\n", stderr)
+                    exit(1)
+                }
+            }
+            RunLoop.main.run()
+            return
+        }
         // Small diagnostic command for verifying the real account integration without starting the UI.
         if CommandLine.arguments.contains("--check-connection") || CommandLine.arguments.contains("--check-claude") {
             do {

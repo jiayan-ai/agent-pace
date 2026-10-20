@@ -96,4 +96,36 @@ struct ClaudeWebTests {
         try expect(foreign["status"] as? Int == 401)
         try expect((foreign["requests"] as? [Any])?.isEmpty == true)
     }
+
+    func testBridgeIncludesFableWithoutLeakingOtherFields() throws {
+        let orgs = #"{"status":200,"data":[{"uuid":"\#(org)","name":"Personal"}]}"#
+        let usage = #"{"status":200,"data":{"seven_day":{"utilization":20,"resets_at":"2026-10-24T01:00:00Z"},"limits":[{"kind":"weekly_scoped","percent":42.5,"resets_at":"2026-10-23T03:00:00Z","scope":{"model":{"display_name":"Fable"}},"private":"must not cross bridge"}],"account_secret":"must not cross bridge"}}"#
+        var result = try runScript(responses: "[\(orgs),\(usage)]")
+        result.removeValue(forKey: "requests")
+        let data = try JSONSerialization.data(withJSONObject: result)
+        try expect(!String(decoding: data, as: UTF8.self).contains("must not cross bridge"))
+        let snapshot = try JSONDecoder().decode(ClaudeWebReply.self, from: data).snapshot()
+        let fable = try require(snapshot.response.windows.first { $0.bucketID == "claude_fable" })
+        try expect(fable.window.usedPercent == 42.5 && fable.window.remaining == 57.5)
+        let malformed = usage.replacingOccurrences(of: "42.5", with: "\"bad\"")
+        let invalid = try runScript(responses: "[\(orgs),\(malformed)]")
+        try expect((invalid["usage"] as? [String: Any])?["seven_day_fable"] == nil)
+    }
+
+    func testFableScopeZeroMissingAndAmbiguousRows() throws {
+        func windows(_ rows: String) throws -> [String: Any] {
+            let orgs = #"{"status":200,"data":[{"uuid":"\#(org)","name":"Personal"}]}"#
+            let usage = #"{"status":200,"data":{"seven_day":{"utilization":20},"limits":\#(rows),"harbor_lantern":{"utilization":99}}}"#
+            return try require(runScript(responses: "[\(orgs),\(usage)]")["usage"] as? [String: Any])
+        }
+        let row = #"{"kind":"weekly_scoped","percent":0,"resets_at":null,"scope":{"model":{"display_name":"Fable"}}}"#
+        let zero = try require(windows("[\(row)]")["seven_day_fable"] as? [String: Any])
+        try expect(zero["utilization"] as? Double == 0 && zero["resets_at"] is NSNull)
+        for rows in ["null", "[]", "[\(row),\(row)]", "[\(row.replacingOccurrences(of: "weekly_scoped", with: "weekly_all"))]",
+                     "[\(row.replacingOccurrences(of: "Fable", with: "Other"))]", "[\(row.replacingOccurrences(of: "\"percent\":0", with: "\"percent\":-1"))]"] {
+            let values = try windows(rows)
+            try expect(values["seven_day_fable"] == nil)
+            try expect(values["seven_day"] != nil)
+        }
+    }
 }

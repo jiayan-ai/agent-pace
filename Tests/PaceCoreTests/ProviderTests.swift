@@ -29,6 +29,43 @@ struct ProviderTests {
         try expectThrows { try JSONDecoder().decode(ClaudeUsageResponse.self, from: Data(#"{"seven_day":{"utilization":"bad"}}"#.utf8)) }
     }
 
+    func testFableWeeklyBudgetIsIndependentOfOverallWeeklyBudget() throws {
+        func response(_ fableUsed: Double) throws -> UsageResponse {
+            let json = #"{"seven_day":{"utilization":20,"resets_at":"2026-10-24T01:00:00Z"},"seven_day_fable":{"utilization":\#(fableUsed),"resets_at":"2026-10-23T03:00:00.123Z"}}"#
+            return try JSONDecoder().decode(ClaudeUsageResponse.self, from: Data(json.utf8)).normalized
+        }
+        let now = ISO8601DateFormatter().date(from: "2026-10-19T10:00:00Z")!
+        let initial = try response(42.5)
+        let fable = try require(initial.windows.first { $0.bucketID == "claude_fable" })
+        try expect(fable.label == "Claude Fable · 7 天" && fable.window.remaining == 57.5)
+        try expect(fable.window.windowDurationMins == 10080)
+        let expected = ISO8601DateFormatter().date(from: "2026-10-23T03:00:00Z")!
+        try expect(abs(try require(fable.window.resetsAt) - expected.timeIntervalSince1970 - 0.123) < 0.001)
+        var history = ProviderHistory()
+        history.ingest(UsageSnapshot(response: initial, accountKey: "fixture", fetchedAt: now))
+        history.selectedID = fable.id
+        let overall = try require(history.budgets["fixture/claude/primary"])
+        let before = try require(history.budgets["fixture/claude_fable/primary"])
+        history.ingest(UsageSnapshot(response: try response(50.5), accountKey: "fixture", fetchedAt: now.addingTimeInterval(60)))
+        try expect(history.selectedID == fable.id)
+        try expect(history.budgets["fixture/claude/primary"] == overall)
+        try expect(history.budgets["fixture/claude_fable/primary"]?.consumed == 8)
+        try expect(history.budgets["fixture/claude_fable/primary"]?.allowance == before.allowance)
+        let restored = try JSONDecoder().decode(ProviderHistory.self, from: JSONEncoder().encode(history))
+        try expect(restored.selectedID == fable.id && restored.budgets == history.budgets)
+    }
+
+    func testFableMissingAndZeroUsage() throws {
+        for field in ["", #", "seven_day_fable":null"#] {
+            let response = try JSONDecoder().decode(ClaudeUsageResponse.self, from: Data((#"{"seven_day":{"utilization":20,"resets_at":null}"# + field + "}").utf8)).normalized
+            try expect(response.windows.count == 1)
+        }
+        let response = try JSONDecoder().decode(ClaudeUsageResponse.self, from: Data(#"{"seven_day_fable":{"utilization":0,"resets_at":null}}"#.utf8)).normalized
+        let fable = try require(response.windows.first)
+        try expect(fable.bucketID == "claude_fable" && fable.window.remaining == 100)
+        try expect(DailyBudget.reconcile(previous: nil, window: fable.window, now: date) == nil)
+    }
+
     func snapshot(_ used: Double, identity: String = "account-a") -> UsageSnapshot {
         let window = UsageWindow(usedPercent: used, windowDurationMins: 10080, resetsAt: date.addingTimeInterval(7 * 86400).timeIntervalSince1970)
         let response = UsageResponse(rateLimits: UsageBucket(limitId: "same-id", limitName: "Test", primary: window))

@@ -77,6 +77,15 @@ public enum ClaudeWebAPI {
                 usage[key] = {utilization:window.utilization, resets_at:typeof window.resets_at === 'string' ? window.resets_at : null};
             }
         }
+        // Current Claude usage identifies Fable through a model-scoped weekly
+        // limit. Internal bucket codenames are not a stable model identifier.
+        const fable = Array.isArray(resultUsage.data?.limits) ? resultUsage.data.limits.filter(row =>
+            row?.kind === 'weekly_scoped' && row?.scope?.model?.display_name === 'Fable') : [];
+        if (fable.length === 1 && typeof fable[0].percent === 'number' &&
+            Number.isFinite(fable[0].percent) && fable[0].percent >= 0) {
+            usage.seven_day_fable = {utilization:fable[0].percent,
+                resets_at:typeof fable[0].resets_at === 'string' ? fable[0].resets_at : null};
+        }
         return JSON.stringify({status:200, organizations, organization:org.uuid, usage});
     } catch { return JSON.stringify({status:503}); }
     finally { clearTimeout(timer); }

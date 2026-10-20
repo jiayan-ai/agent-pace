@@ -23,6 +23,7 @@ public enum ClaudeUsageError: Error, LocalizedError {
         }
     }
 }
+/// Quota-only bridge format. Fable is normalized from limits[].weekly_scoped.
 public struct ClaudeUsageResponse: Decodable {
     public struct Window: Decodable {
         let utilization: Double?
@@ -47,6 +48,7 @@ public struct ClaudeUsageResponse: Decodable {
     let seven_day: Window?
     let seven_day_sonnet: Window?
     let seven_day_opus: Window?
+    let seven_day_fable: Window?
 
     public var normalized: UsageResponse {
         let main = UsageBucket(limitId: "claude", limitName: "Claude",
@@ -58,6 +60,9 @@ public struct ClaudeUsageResponse: Decodable {
         }
         if let seven_day_opus {
             buckets["claude_opus"] = UsageBucket(limitId: "claude_opus", limitName: "Claude Opus", primary: seven_day_opus.normalized(minutes: 10080))
+        }
+        if let seven_day_fable {
+            buckets["claude_fable"] = UsageBucket(limitId: "claude_fable", limitName: "Claude Fable", primary: seven_day_fable.normalized(minutes: 10080))
         }
         return UsageResponse(rateLimits: main, rateLimitsByLimitId: buckets)
     }

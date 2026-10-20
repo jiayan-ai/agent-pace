@@ -7,10 +7,12 @@ A native macOS menu bar app that turns your remaining Codex / Claude subscriptio
 ## 功能
 
 - Codex / Claude Code 一键切换，菜单栏显示当天还可用的额度。
+- Claude Max 的 Fable 周额度可单独选择，查看真实使用比例、重置时间和每日预算。
 - 按剩余额度和重置时间均摊；当天预算固定，再扣减实际消耗。
 - 超过预算显示红色负数，两个平台和各额度窗口分别保存记录。
 - 每 5 分钟刷新，支持登录 Mac 时启动。
 - Codex reset 券数量、有效期同步；结合近 30 天账户日用量给出使用建议。
+- Tibo 公开 reset 动态与原帖链接；工具内一键查看 Will Codex Reset 的 24 / 48 小时预测。
 - 原生 SwiftUI + AppKit，无第三方库，不自动消耗额度。
 
 ## 打开
@@ -20,6 +22,10 @@ A native macOS menu bar app that turns your remaining Codex / Claude subscriptio
 当前下载包采用临时签名，尚未取得 Apple Developer ID 签名及公证。macOS 首次打开可能阻止运行；确认下载来源后，可按 [Apple 官方说明](https://support.apple.com/en-us/102445) 在「系统设置 → 隐私与安全性」选择「仍要打开」。不需要关闭系统安全检查。
 
 面板顶部的开关可切换 **Codex / Claude Code**，菜单栏随之显示「Codex 14.3%」或「Claude 16.8%」一类的数字，点击查看详情。首次运行会自动打开独立窗口；之后可以从面板右下角的菜单再次打开窗口。关闭窗口后，小工具继续在菜单栏运行。
+
+1.4.1 起详情使用 macOS 原生弹出层，普通启动保持收起；首次点击即可展开，再次点击或点击外部收起。滚动、额度窗口下拉菜单及「更多选项」交给系统处理，避免启动激活和自定义失焦监听互相关闭详情。
+
+在 Claude Code 下的「额度窗口」选择 **Claude Fable · 7 天**，菜单栏会相应显示「Fable …%」。该窗口仅在账户接口实际返回 Fable 额度时出现，不根据套餐名称推测或从总周额度倒算。Fable 使用同时计入总周额度，也受 5 小时额度限制；它不是额外赠送的周额度。参见 [Claude Fable 套餐说明](https://support.claude.com/en/articles/15424964-claude-fable-models-on-your-plan)。
 
 需要 macOS 13 或更新版本，并已安装、登录 ChatGPT / Codex 桌面应用，或 Codex CLI。下载包包含 Apple Silicon 和 Intel 两种架构；已在 Apple Silicon 上运行验证，Intel 尚未实机验证。应用使用本机现有的 Codex 登录状态，不需要填写 API Key。Claude 需要在 **Agent Pace 的连接窗口中登录一次**，之后复用会话自动刷新；无需登录终端版，也不访问 Claude Safe Storage。请使用与 Claude 桌面 Code 相同的账户。
 
@@ -66,6 +72,19 @@ Codex 面板会同步可用 reset 总数及接口提供的每张券的有效期�
 
 Claude 当前使用的接口没有提供 reset 券或月度账户历史，因此暂不提供这部分建议，不会猜测券数。Codex 月度记录与额度记录按账户隔离，切换账户会清除旧账户的模式数据。
 
+## Tibo Reset 动态（1.4.0）
+
+Codex 面板增加「Tibo · Reset 动态」。通过 [Codex Reset 公开 API](https://codexreset.dev/api/) 每 15 分钟同步全局 reset 与备用 reset 券发放记录，保留原始来源链接，以及「社区收录 / 追踪站已核验 / 预告待执行」的区别。手动刷新最短间隔为 1 分钟。这里的「今日」按 Mac 本地时区计算，不直接使用追踪站的 UTC 今日状态。
+
+点击「查看 24 / 48 小时预测」，在 Agent Pace 的独立网页窗口打开 [Will Codex Reset](https://willcodexreset.com/)，查看网站实时呈现的概率、Tibo 动态及预测说明。也可以在默认浏览器打开。**目前没有接入该站的数值 API，也不后台抓取、缓存或重新解释它的概率**；页面是否加载完成、预测更新时间及方法以网站本身为准。网页加载失败会提供重试入口。
+
+- 公告、reset 券发放与个人额度实际到账是三件不同的事。公开记录不会增加今日预算、提前重置额度或自动使用 reset 券；账户实际额度变化后仍由原有逻辑重新计算。
+- 「今日尚无记录」不表示今天不会 reset；网络失败、来源失败、未知状态或数据超过 30 分钟时显示待确认，保留上次记录。成功下载不等于上游已更新。
+- 完整时间转换到本地时区；仅提供日期的历史记录保留 UTC 日期，不虚构时分。公告时间也不代表每个账户的精确到账时间。
+- 在「记录与来源」里可关闭自动同步；仍可主动打开预测网页。
+
+记录由第三方社区维护，可能遗漏或延迟；预测是社区估计，不能当成 OpenAI 的 reset 承诺。是否到账以工具上方同步的真实账户额度为准。
+
 ## 数据与隐私
 
 Agent Pace 不需要 macOS「App 管理」（更新或删除其他应用）权限，也没有应用安装或自动更新功能。可关闭系统设置中的这项授权；「登录 Mac 时启动」是单独的可选登录项设置。
@@ -73,6 +92,8 @@ Agent Pace 不需要 macOS「App 管理」（更新或删除其他应用）权�
 使用官方 [Codex App Server 接口](https://learn.chatgpt.com/docs/app-server)：`initialize`、`account/read`、`account/rateLimits/read`、`account/usage/read`。不会调用 `turn/start` 或 `account/rateLimitResetCredit/consume`，不会创建聊天、发起模型推理或消耗重置券。
 
 Codex 由已安装的 Codex 程序管理登录，小工具不读取其认证令牌。账户标识（ID 或邮箱）与工作区路由仅取哈希用于区分预算；不保存明文邮箱。额度快照、每日基线、reset 券信息和近 30 天日用量保存在 `~/Library/Application Support/CodexPace/state.json`，沿用旧名称以保留升级前的记录。历史只在本机分析，不上传给其他服务。错误信息不记录原始服务响应。
+
+Tibo 动态只向 `codexreset.dev` 发起匿名的公开 GET 请求，不附带账户、额度、Token、Cookie 或使用历史。公开数据缓存单独保存在同目录的 `reset-radar.json`，不混入账户预算。Will Codex Reset 窗口只在点击时加载，使用独立的非持久 WebKit 会话，没有网页脚本桥接或页面内容提取；网站可正常加载其自身的第三方资源，适用该网站的隐私政策。两个网站均不会收到 Agent Pace 的账户用量记录，使用此功能不需要钥匙串密码或新的 macOS 权限。
 
 Claude 使用 Agent Pace 自己的 WebKit 网页会话。点击「连接 Claude」，在 `https://claude.ai` 完成一次登录，然后点「同步额度」。与桌面 Code 使用同一账户即可查看共享的订阅额度；不读取 Claude 桌面的配置、OAuth 缓存、Safe Storage 或其他浏览器的 Cookie，也不会请求 Mac 钥匙串密码。旧版桌面连接不会自动迁移，需要重新连接一次。
 
@@ -110,6 +131,13 @@ bash scripts/package-release.sh
 ```sh
 "dist/Agent Pace.app/Contents/MacOS/AgentPace" --check-connection
 "dist/Agent Pace.app/Contents/MacOS/AgentPace" --check-claude
+"dist/Agent Pace.app/Contents/MacOS/AgentPace" --check-reset-radar
+```
+
+在有图形桌面的 Mac 上检查菜单栏冷启动、连续展开/收起和屏幕边界（会短暂显示测试弹层，不读取账户）：
+
+```sh
+"dist/Agent Pace.app/Contents/MacOS/AgentPace" --check-menu
 ```
 
 没有第三方依赖。使用 SwiftUI + AppKit + WebKit，构建产物采用本机临时签名，未进行 App Store 分发或公证。自动发现 ChatGPT / Codex 标准安装路径及常见 CLI 路径；如果升级后的应用改变程序位置，需要更新发现逻辑。
