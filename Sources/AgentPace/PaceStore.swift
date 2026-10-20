@@ -49,7 +49,11 @@ final class PaceStore: ObservableObject {
                 for provider in UsageProvider.allCases {
                     let record = self.history[provider]
                     let crossedDay = record.snapshot.map { !Calendar.current.isDate($0.fetchedAt, inSameDayAs: self.now) } ?? false
-                    let interval: TimeInterval = crossedDay ? 60 : 300
+                    let sessionResetPassed = provider == .claude && (record.snapshot?.response.windows.contains {
+                        $0.window.windowDurationMins == 300 &&
+                        ClaudeSessionPace(window: $0.window, now: self.now).awaitingReset
+                    } ?? false)
+                    let interval: TimeInterval = crossedDay || sessionResetPassed ? 60 : 300
                     if self.now.timeIntervalSince(self.lastAttempt[provider] ?? .distantPast) >= interval {
                         self.refresh(provider: provider)
                     }
@@ -71,6 +75,10 @@ final class PaceStore: ObservableObject {
     var error: String? { errors[provider] }
     var windows: [MeteredWindow] { snapshot?.response.windows ?? [] }
     var selected: MeteredWindow? { windows.first(where: { $0.id == selectedID }) ?? windows.first }
+    var sessionPace: ClaudeSessionPace? {
+        guard provider == .claude, let selected, selected.window.windowDurationMins == 300 else { return nil }
+        return ClaudeSessionPace(window: selected.window, now: now)
+    }
     var budget: DailyBudget? {
         guard let selected, let snapshot else { return nil }
         return history[provider].budgets["\(snapshot.accountKey)/\(selected.id)"]
@@ -86,9 +94,19 @@ final class PaceStore: ObservableObject {
         return budget
     }
     var menuTitle: String {
+        if let sessionPace { return sessionPace.menuTitle(stale: stale) }
         let title = selected?.bucketID == "claude_fable" ? "Fable" : provider.shortTitle
         guard let budget = validBudget else { return "\(title) \(isRefreshing ? "同步中" : "待同步")" }
         return "\(title) \(stale ? "≈" : "")\(number(budget.leftToday))%"
+    }
+    var menuTooltip: String {
+        if let pace = sessionPace {
+            let allowance = pace.allowance.map { "\(number($0))\(pace.unit)" } ?? "待同步"
+            return "Claude · \(pace.heading) \(allowance)\n\(pace.countdown)\(stale ? " · 上次记录" : "")"
+        }
+        let over = validBudget?.overBudget ?? 0
+        return over > 0 ? "\(provider.title) · 今日已超额 \(number(over)) 个百分点"
+            : "\(provider.title) · 今天还可用的额度"
     }
     var daysLeft: Double? { selected?.window.resetDate.map { max(0, $0.timeIntervalSince(now) / 86400) } }
     var usagePattern: UsagePattern { UsagePattern(activity: history[provider].activity, now: now) }

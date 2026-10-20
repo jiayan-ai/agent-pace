@@ -54,12 +54,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func updateStatusItem() {
         guard let button = statusItem.button else { return }
-        let overBudget = (store.validBudget?.overBudget ?? 0) > 0
         button.title = " " + store.menuTitle
         button.contentTintColor = nil
-        button.toolTip = overBudget
-            ? "\(store.provider.title) · 今日已超额 \(number(store.validBudget?.overBudget ?? 0)) 个百分点"
-            : "\(store.provider.title) · 今天还可用的额度"
+        button.toolTip = store.menuTooltip
     }
 
     private func showMenu() {
@@ -182,6 +179,11 @@ struct AgentPaceApplication {
                     snapshot = try reply!.get()
                 } else { snapshot = try CodexClient.fetch() }
                 for item in snapshot.response.windows {
+                    if CommandLine.arguments.contains("--check-claude"), item.window.windowDurationMins == 300 {
+                        let pace = ClaudeSessionPace(window: item.window, now: snapshot.fetchedAt)
+                        print("\(item.label): 剩余 \(pace.remaining.map(number) ?? "未知")%; \(pace.heading) \(pace.allowance.map(number) ?? "未知")\(pace.unit); \(pace.countdown)")
+                        continue
+                    }
                     let budget = DailyBudget.reconcile(previous: nil, window: item.window, now: snapshot.fetchedAt)
                     print("\(item.label): 剩余 \(item.window.remaining.map(number) ?? "未知")%; 日均 \(budget.map { number($0.allowance) } ?? "未知")%; 重置 \(item.window.resetDate.map(resetTime) ?? "未知")")
                 }

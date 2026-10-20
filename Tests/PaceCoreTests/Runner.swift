@@ -25,7 +25,11 @@ struct Runner {
         let resets = ResetTests()
         let web = ClaudeWebTests()
         let radar = ResetRadarTests()
+        let session = ClaudeSessionTests()
         let cases: [(String, () throws -> Void)] = [
+            ("Claude 5 小时按小时动态均摊且不受午夜影响", session.testRollingHourlyAllowanceAndMidnight),
+            ("Claude 最后不足一小时、倒计时与到期等待", session.testFinalHourAndCountdownBoundaries),
+            ("Claude 未知、耗尽、重置后新窗口及周额度隔离", session.testUnknownExhaustedAndNewSession),
             ("日预算与逐点扣减", budget.testDailyAllowanceAndOneForOneSubtraction),
             ("超额显示负数且次日不重复扣减", budget.testSpendingBeyondBudgetShowsNegativeBalance),
             ("小数天数与不足一天", budget.testFractionalDaysAndFinalHours),

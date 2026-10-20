@@ -26,12 +26,16 @@ struct PaceView: View {
                     .labelsHidden()
                     .accessibilityLabel("选择额度窗口")
                 }
-                hero
-                metrics(selected)
-                if let budget = store.validBudget { todayProgress(budget) }
-                else {
-                    Label("等待最新额度，确认今天的预算", systemImage: "clock.arrow.circlepath")
-                        .font(.callout).foregroundStyle(.secondary)
+                if let pace = store.sessionPace {
+                    ClaudeSessionView(pace: pace, stale: store.stale, accent: accent)
+                } else {
+                    hero
+                    metrics(selected)
+                    if let budget = store.validBudget { todayProgress(budget) }
+                    else {
+                        Label("等待最新额度，确认今天的预算", systemImage: "clock.arrow.circlepath")
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
                 }
                 if store.provider == .codex {
                     ResetRadarView(store: store)
@@ -77,7 +81,7 @@ struct PaceView: View {
                 .background(accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
             VStack(alignment: .leading, spacing: 3) {
                 Text("Agent Pace").font(.system(size: 16, weight: .semibold))
-                Text("每日额度节奏").font(.caption).foregroundStyle(.secondary)
+                Text(store.sessionPace == nil ? "每日额度节奏" : "每小时额度节奏").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
             if let selected = store.selected {
@@ -177,12 +181,23 @@ struct PaceView: View {
     private var explanation: some View {
         DisclosureGroup("怎么算出来的", isExpanded: $showExplanation) {
             VStack(alignment: .leading, spacing: 8) {
-                if let budget = store.validBudget {
-                    Text("\(number(budget.startingRemaining))% ÷ \(String(format: "%.2f", budget.planningDays)) 天 = \(number(budget.allowance))% / 天")
-                        .font(.callout.weight(.medium)).monospacedDigit()
+                if let pace = store.sessionPace {
+                    if let remaining = pace.remaining, let seconds = pace.secondsRemaining,
+                       seconds >= 3600, let allowance = pace.allowance {
+                        Text("\(number(remaining))% ÷ \(String(format: "%.2f", seconds / 3600)) 小时 = \(number(allowance))% / 小时")
+                            .font(.callout.weight(.medium)).monospacedDigit()
+                    }
+                    Text("剩余额度 ÷ 距重置的小时数，给出接下来每小时的均摊建议；随时间和同步到的用量更新，不使用今日预算。")
+                    Text("不足 1 小时时显示重置前的全部剩余额度。倒计时结束后等待服务端确认，不自动假设额度已恢复。")
+                    Text("额度无法准确换算成使用分钟数，实际消耗取决于模型和任务；总周额度和模型限额也可能先用完。")
+                } else {
+                    if let budget = store.validBudget {
+                        Text("\(number(budget.startingRemaining))% ÷ \(String(format: "%.2f", budget.planningDays)) 天 = \(number(budget.allowance))% / 天")
+                            .font(.callout.weight(.medium)).monospacedDigit()
+                    }
+                    Text("每天首次同步时，将剩余额度除以距重置的天数；不足 1 天按 1 天算。当天预算固定，再扣除首次同步之后用掉的额度。")
+                    Text("跨天、切换账户或额度重置后重新计算。百分比指总额度的百分点；这是均摊建议，实际使用仍受其他额度窗口限制。")
                 }
-                Text("每天首次同步时，将剩余额度除以距重置的天数；不足 1 天按 1 天算。当天预算固定，再扣除首次同步之后用掉的额度。")
-                Text("跨天、切换账户或额度重置后重新计算。百分比指总额度的百分点；这是均摊建议，实际使用仍受其他额度窗口限制。")
                 if store.provider == .claude {
                     Text("Claude 各入口共享订阅额度。在工具内登录一次后自动同步；登录失效时重新连接即可，无需 Mac 钥匙串密码。")
                     Text("当前 Claude 接口未提供 reset 券或账户月度历史，因此不推测券数，也不生成月度 reset 建议。")
