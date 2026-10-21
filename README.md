@@ -1,10 +1,12 @@
-# Agent Pace
+# Agent Pace for macOS
+
+Windows version: [agent-pace-windows](https://github.com/jiayan-ai/agent-pace-windows).
 
 English · [简体中文](README.zh-CN.md)
 
 A native macOS menu bar app that helps you pace your **Codex and Claude subscription usage**. See how much you can use today—or per hour in Claude's five-hour window—and when your quota resets.
 
-[Download the latest release](https://github.com/jiayan-ai/agent-pace/releases/latest)
+[Download the latest release](https://github.com/jiayan-ai/agent-pace-mac/releases/latest)
 
 ## Features
 
@@ -20,7 +22,7 @@ A native macOS menu bar app that helps you pace your **Codex and Claude subscrip
 
 ## Install
 
-1. Download `Agent-Pace-…-universal.zip` from [Releases](https://github.com/jiayan-ai/agent-pace/releases/latest).
+1. Download `Agent-Pace-…-universal.zip` from [Releases](https://github.com/jiayan-ai/agent-pace-mac/releases/latest).
 2. Quit any older copy, unzip the download and move **Agent Pace.app** to **Applications**.
 3. Open the app. Click its menu bar label to view details; click again or click outside to close them. A separate window is also available from the panel's More options menu.
 
@@ -149,8 +151,8 @@ The reset feed uses anonymous GET requests without account data, credentials, co
 Requires macOS 13+ and a Swift 6 toolchain, supplied by Xcode 16+ or compatible Apple Command Line Tools. There are no third-party package dependencies.
 
 ```sh
-git clone https://github.com/jiayan-ai/agent-pace.git
-cd agent-pace
+git clone https://github.com/jiayan-ai/agent-pace-mac.git
+cd agent-pace-mac
 bash scripts/test.sh
 bash scripts/build.sh
 open "dist/Agent Pace.app"

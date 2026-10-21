@@ -1,4 +1,6 @@
-# Agent Pace
+# Agent Pace for macOS
+
+Windows 版本：[agent-pace-windows](https://github.com/jiayan-ai/agent-pace-windows)。
 
 [English](README.md) · 简体中文
 
@@ -24,7 +26,7 @@ A native macOS menu bar app that turns your remaining Codex / Claude subscriptio
 
 ## 打开
 
-从 [Releases](https://github.com/jiayan-ai/agent-pace/releases/latest) 下载对应版本的 `Agent-Pace-…-universal.zip`，解压后将 **Agent Pace.app** 拖入「应用程序」文件夹，再双击打开。无需安装开发工具或编译源码。本文描述当前源码功能；已发布安装包的功能以对应 Release 说明为准。
+从 [Releases](https://github.com/jiayan-ai/agent-pace-mac/releases/latest) 下载对应版本的 `Agent-Pace-…-universal.zip`，解压后将 **Agent Pace.app** 拖入「应用程序」文件夹，再双击打开。无需安装开发工具或编译源码。本文描述当前源码功能；已发布安装包的功能以对应 Release 说明为准。
 
 当前下载包采用临时签名，尚未取得 Apple Developer ID 签名及公证。macOS 首次打开可能阻止运行；确认下载来源后，可按 [Apple 官方说明](https://support.apple.com/en-us/102445) 在「系统设置 → 隐私与安全性」选择「仍要打开」。不需要关闭系统安全检查。
 
@@ -127,8 +129,8 @@ Claude 的 usage 接口并非稳定的第三方公开 API，网页升级可能�
 需要 macOS 13+ 和 Swift 6 工具链（Xcode 16+ 或对应的 Apple Command Line Tools）。目前在 Apple Silicon Mac 上验证；Intel Mac 可尝试源码构建，尚未实机验证。
 
 ```sh
-git clone https://github.com/jiayan-ai/agent-pace.git
-cd agent-pace
+git clone https://github.com/jiayan-ai/agent-pace-mac.git
+cd agent-pace-mac
 ```
 
 在项目目录执行：
