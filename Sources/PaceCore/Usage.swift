@@ -79,10 +79,10 @@ public struct MeteredWindow: Identifiable, Equatable, Codable {
     public var id: String { "\(bucketID)/\(slot)" }
     public var label: String {
         let title = name == "codex" ? "Codex" : name
-        guard let mins = window.windowDurationMins else { return "\(title) · 未知周期" }
-        if mins % 1440 == 0 { return "\(title) · \(mins / 1440) 天" }
-        if mins % 60 == 0 { return "\(title) · \(mins / 60) 小时" }
-        return "\(title) · \(mins) 分钟"
+        guard let mins = window.windowDurationMins else { return L("\(title) · 未知周期") }
+        if mins % 1440 == 0 { return L("\(title) · \(mins / 1440) 天") }
+        if mins % 60 == 0 { return L("\(title) · \(mins / 60) 小时") }
+        return L("\(title) · \(mins) 分钟")
     }
 }
 

@@ -33,22 +33,22 @@ public struct ClaudeSessionPace {
         return remaining / max(1, secondsRemaining / 3600)
     }
 
-    public var heading: String { isFinalHour ? "重置前还可以用" : "接下来每小时建议可用" }
-    public var unit: String { isFinalHour ? "%" : "% / 小时" }
+    public var heading: String { isFinalHour ? L("重置前还可以用") : L("接下来每小时建议可用") }
+    public var unit: String { isFinalHour ? "%" : L("% / 小时") }
     public var countdown: String {
-        guard let secondsRemaining else { return "重置时间未知" }
-        guard secondsRemaining > 0 else { return "等待重置确认" }
-        if secondsRemaining < 60 { return "不足 1 分钟" }
+        guard let secondsRemaining else { return L("重置时间未知") }
+        guard secondsRemaining > 0 else { return L("等待重置确认") }
+        if secondsRemaining < 60 { return L("不足 1 分钟") }
         // Round up so the countdown never claims a reset happened early.
         let minutes = ceil(secondsRemaining / 60)
         let hours = floor(minutes / 60)
         let rest = minutes.truncatingRemainder(dividingBy: 60)
-        return hours > 0 ? String(format: "%.0f 小时 %.0f 分钟", hours, rest)
-            : String(format: "%.0f 分钟", minutes)
+        return hours > 0 ? String(format: L("%.0f 小时 %.0f 分钟"), hours, rest)
+            : String(format: L("%.0f 分钟"), minutes)
     }
 
     public func menuTitle(stale: Bool) -> String {
-        guard let allowance else { return awaitingReset ? "Claude 待重置" : "Claude 待同步" }
+        guard let allowance else { return awaitingReset ? L("Claude 待重置") : L("Claude 待同步") }
         return "Claude \(stale ? "≈" : "")\(String(format: "%.1f", allowance))\(isFinalHour ? "% · <1h" : "%/h")"
     }
 }

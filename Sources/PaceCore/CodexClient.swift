@@ -20,12 +20,12 @@ public enum UsageError: LocalizedError {
     case missingCodex, timeout, exited, invalidResponse, notSignedIn, server
     public var errorDescription: String? {
         switch self {
-        case .missingCodex: return "未找到 Codex。请安装并登录 ChatGPT 或 Codex 桌面应用，也可以安装 Codex CLI。"
-        case .timeout: return "额度同步超时。请检查网络，然后重试。"
-        case .exited: return "Codex 本地服务未能启动。请打开 ChatGPT / Codex 并确认已登录。"
-        case .invalidResponse: return "暂时无法识别额度数据。请更新 ChatGPT / Codex 后重试。"
-        case .notSignedIn: return "请先在 ChatGPT / Codex 中登录订阅账户。API Key 登录不提供此额度。"
-        case .server: return "暂时无法读取额度。请检查网络及 ChatGPT / Codex 的登录状态。"
+        case .missingCodex: return L("未找到 Codex。请安装并登录 ChatGPT 或 Codex 桌面应用，也可以安装 Codex CLI。")
+        case .timeout: return L("额度同步超时。请检查网络，然后重试。")
+        case .exited: return L("Codex 本地服务未能启动。请打开 ChatGPT / Codex 并确认已登录。")
+        case .invalidResponse: return L("暂时无法识别额度数据。请更新 ChatGPT / Codex 后重试。")
+        case .notSignedIn: return L("请先在 ChatGPT / Codex 中登录订阅账户。API Key 登录不提供此额度。")
+        case .server: return L("暂时无法读取额度。请检查网络及 ChatGPT / Codex 的登录状态。")
         }
     }
 }

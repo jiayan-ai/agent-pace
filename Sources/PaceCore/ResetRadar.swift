@@ -25,24 +25,24 @@ public struct ResetRadarSnapshot: Codable {
     public func assessment(at now: Date, calendar: Calendar = .current, failed: Bool = false) -> ResetRadarAssessment {
         let fresh = !failed && isFresh(at: now)
         guard fresh else {
-            return ResetRadarAssessment(title: "Reset 动态待确认", detail: "来源尚未更新或连接失败；下面保留上次记录。", fresh: false, event: nil)
+            return ResetRadarAssessment(title: L("Reset 动态待确认"), detail: L("来源尚未更新或连接失败；下面保留上次记录。"), fresh: false, event: nil)
         }
         // The provider's *_today status uses UTC. Derive the user's day from event timestamps.
         let today = feed.records.filter {
             $0.preciseDate.map { $0 <= now && calendar.isDate($0, inSameDayAs: now) } == true
         }
         if let event = today.first(where: { $0.type == "global_reset" && $0.status != "planned" }) {
-            return ResetRadarAssessment(title: "今日有全局 reset 记录", detail: "\(event.verificationLabel)；是否覆盖你的账户，以实际额度为准。", fresh: true, event: event)
+            return ResetRadarAssessment(title: L("今日有全局 reset 记录"), detail: L("\(event.verificationLabel)；是否覆盖你的账户，以实际额度为准。"), fresh: true, event: event)
         }
         if let event = feed.records.first(where: {
             $0.status == "planned" && $0.announcedDate.map { now.timeIntervalSince($0) >= 0 && now.timeIntervalSince($0) < 86400 } == true
         }) {
-            return ResetRadarAssessment(title: "有新的 reset 预告", detail: "尚未确认执行，时间与适用范围请查看原帖。", fresh: true, event: event)
+            return ResetRadarAssessment(title: L("有新的 reset 预告"), detail: L("尚未确认执行，时间与适用范围请查看原帖。"), fresh: true, event: event)
         }
         if let event = today.first(where: { $0.type == "banked_reset" && $0.status != "planned" }) {
-            return ResetRadarAssessment(title: "今日有 reset 券发放记录", detail: "\(event.verificationLabel)；发券不等于额度已自动恢复。", fresh: true, event: event)
+            return ResetRadarAssessment(title: L("今日有 reset 券发放记录"), detail: L("\(event.verificationLabel)；发券不等于额度已自动恢复。"), fresh: true, event: event)
         }
-        return ResetRadarAssessment(title: "今日尚无全局 reset 记录", detail: "追踪站暂未收录，不代表今天不会 reset。", fresh: true, event: nil)
+        return ResetRadarAssessment(title: L("今日尚无全局 reset 记录"), detail: L("追踪站暂未收录，不代表今天不会 reset。"), fresh: true, event: nil)
     }
 }
 
@@ -116,24 +116,24 @@ public struct PublicResetEvent: Codable, Identifiable {
     }
     public var dateOnlyLabel: String? {
         guard preciseDate == nil, let raw = announcedAt ?? effectiveAt, date != nil else { return nil }
-        return String(raw.prefix(10)) + "（UTC 日期）"
+        return String(raw.prefix(10)) + L("（UTC 日期）")
     }
     public var sourceURL: URL? { ResetRadarLinks.evidence(sourceURLString) }
     public var isUsable: Bool {
         !id.isEmpty && ["global_reset", "banked_reset"].contains(type)
             && ["confirmed", "recorded", "planned"].contains(status) && date != nil && sourceURL != nil
     }
-    public var kindLabel: String { type == "banked_reset" ? "Reset 券发放" : "全局 reset" }
+    public var kindLabel: String { type == "banked_reset" ? L("Reset 券发放") : L("全局 reset") }
     public var verificationLabel: String {
         switch status {
-        case "confirmed": return "追踪站已核验"
-        case "planned": return "预告 · 待执行"
-        default: return "社区收录 · 未独立核验"
+        case "confirmed": return L("追踪站已核验")
+        case "planned": return L("预告 · 待执行")
+        default: return L("社区收录 · 未独立核验")
         }
     }
     public var timeLabel: String {
-        if announcedAt != nil { return "公告时间" }
-        return timeBasis == "observation" ? "观察时间" : "记录时间"
+        if announcedAt != nil { return L("公告时间") }
+        return timeBasis == "observation" ? L("观察时间") : L("记录时间")
     }
 }
 
@@ -181,8 +181,8 @@ public enum ResetRadarError: LocalizedError {
     case unavailable, invalidResponse
     public var errorDescription: String? {
         switch self {
-        case .unavailable: return "Reset 动态暂时无法同步，稍后自动重试。"
-        case .invalidResponse: return "Reset 来源格式有变化，暂时无法确认新动态。"
+        case .unavailable: return L("Reset 动态暂时无法同步，稍后自动重试。")
+        case .invalidResponse: return L("Reset 来源格式有变化，暂时无法确认新动态。")
         }
     }
 }

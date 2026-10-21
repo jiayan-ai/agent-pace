@@ -1,4 +1,5 @@
 import Foundation
+import PaceCore
 
 struct TestFailure: Error, CustomStringConvertible {
     let description: String
@@ -19,6 +20,7 @@ func expectThrows<T>(_ operation: () throws -> T) throws {
 @main
 struct Runner {
     static func main() async {
+        Localization.language = .simplifiedChinese
         let budget = BudgetTests()
         let client = ClientTests()
         let providers = ProviderTests()
@@ -26,7 +28,11 @@ struct Runner {
         let web = ClaudeWebTests()
         let radar = ResetRadarTests()
         let session = ClaudeSessionTests()
+        let localization = LocalizationTests()
         let cases: [(String, () throws -> Void)] = [
+            ("语言跟随系统、显式覆盖和偏好持久化", localization.testLanguageResolutionAndPersistence),
+            ("语言即时切换、错误和倒计时翻译且预算不变", localization.testLiveTranslationAndInterpolation),
+            ("英文词条完整性与动态参数一致性", localization.testCatalogArgumentsAndEnglishCoverage),
             ("Claude 5 小时按小时动态均摊且不受午夜影响", session.testRollingHourlyAllowanceAndMidnight),
             ("Claude 最后不足一小时、倒计时与到期等待", session.testFinalHourAndCountdownBoundaries),
             ("Claude 未知、耗尽、重置后新窗口及周额度隔离", session.testUnknownExhaustedAndNewSession),

@@ -19,8 +19,10 @@ final class ClaudeWebSession: NSObject, WKNavigationDelegate, WKUIDelegate {
     private var completion: ((Result<UsageSnapshot, Error>) -> Void)?
     private var requestID: UUID?
     private var executing = false
+    private var lastResult: Result<UsageSnapshot, Error>?
+    private lazy var syncButton = NSButton(title: L("同步额度"), target: self, action: #selector(syncNow))
     private var onSync: (() -> Void)?
-    private let message = NSTextField(wrappingLabelWithString: "在下方 claude.ai 登录，完成后点击「同步额度」。无需 Mac 钥匙串密码。")
+    private let message = NSTextField(wrappingLabelWithString: L("在下方 claude.ai 登录，完成后点击「同步额度」。无需 Mac 钥匙串密码。"))
     private let origin = NSTextField(labelWithString: "https://claude.ai")
     private let organizations = NSPopUpButton()
     private var organizationIDs: [String] = []
@@ -34,10 +36,10 @@ final class ClaudeWebSession: NSObject, WKNavigationDelegate, WKUIDelegate {
         if window == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 720),
                                   styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
-            window.title = "Agent Pace · 连接 Claude"
+            window.title = L("Agent Pace · 连接 Claude")
             window.isReleasedWhenClosed = false
             window.minSize = NSSize(width: 640, height: 500)
-            let sync = NSButton(title: "同步额度", target: self, action: #selector(syncNow))
+            let sync = syncButton
             sync.bezelStyle = .rounded
             organizations.target = self
             organizations.action = #selector(chooseOrganization)
@@ -69,6 +71,20 @@ final class ClaudeWebSession: NSObject, WKNavigationDelegate, WKUIDelegate {
         NSApp.activate(ignoringOtherApps: true)
         if webView.url == nil { loadUsagePage() }
         else { onSync() }
+    }
+
+    func refreshLanguage() {
+        window?.title = L("Agent Pace · 连接 Claude")
+        syncButton.title = L("同步额度")
+        if let popup, let view = popup.contentView as? WKWebView {
+            popup.title = L("Claude 登录 · ") + (view.url?.host ?? "")
+        }
+        if organizations.numberOfItems > 0 { organizations.item(at: 0)?.title = L("选择组织…") }
+        switch lastResult {
+        case .success?: message.stringValue = L("已连接，额度已同步。可以关闭此窗口，之后每 5 分钟自动刷新。")
+        case .failure(let error)?: message.stringValue = error.localizedDescription
+        case nil: message.stringValue = L("在下方 claude.ai 登录，完成后点击「同步额度」。无需 Mac 钥匙串密码。")
+        }
     }
 
     @objc private func syncNow() { onSync?() }
@@ -123,7 +139,7 @@ final class ClaudeWebSession: NSObject, WKNavigationDelegate, WKUIDelegate {
         guard !values.isEmpty else { return }
         organizationIDs = values.map(\.uuid)
         organizations.removeAllItems()
-        organizations.addItem(withTitle: "选择组织…")
+        organizations.addItem(withTitle: L("选择组织…"))
         // Placeholder is intentionally not a valid organization choice.
         organizationIDs.insert("", at: 0)
         organizations.addItems(withTitles: values.map(\.name))
@@ -132,13 +148,14 @@ final class ClaudeWebSession: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     private func finish(_ result: Result<UsageSnapshot, Error>) {
+        lastResult = result
         let callback = completion
         completion = nil
         requestID = nil
         executing = false
         switch result {
         case .success:
-            message.stringValue = "已连接，额度已同步。可以关闭此窗口，之后每 5 分钟自动刷新。"
+            message.stringValue = L("已连接，额度已同步。可以关闭此窗口，之后每 5 分钟自动刷新。")
             if popup != nil { popup?.close(); popup = nil; window?.makeKeyAndOrderFront(nil) }
         case .failure(let error): message.stringValue = error.localizedDescription
         }
@@ -163,7 +180,7 @@ final class ClaudeWebSession: NSObject, WKNavigationDelegate, WKUIDelegate {
         guard webView === self.webView else {
             // OAuth popups share our data store. When they return to Claude,
             // try the read-only quota request; do not close them until it succeeds.
-            popup?.title = "Claude 登录 · " + (webView.url?.host ?? "")
+            popup?.title = L("Claude 登录 · ") + (webView.url?.host ?? "")
             if ClaudeWebAPI.isClaudeOrigin(webView.url) { onSync?() }
             return
         }
@@ -196,7 +213,7 @@ final class ClaudeWebSession: NSObject, WKNavigationDelegate, WKUIDelegate {
         view.navigationDelegate = self
         view.uiDelegate = self
         let child = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 700), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        child.title = "Claude 登录 · " + (action.request.url?.host ?? "")
+        child.title = L("Claude 登录 · ") + (action.request.url?.host ?? "")
         child.isReleasedWhenClosed = false
         child.contentView = view
         child.center()

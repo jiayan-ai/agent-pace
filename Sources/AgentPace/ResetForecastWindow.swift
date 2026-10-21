@@ -8,7 +8,10 @@ import PaceCore
 final class ResetForecastWindow: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
     static let shared = ResetForecastWindow()
     @Published var loading = false
-    @Published var error: String?
+    @Published private var failedToLoad = false
+    @Published private var languageRevision = 0
+    var error: String? { failedToLoad ? L("预测网站暂时无法加载。可以重试，或在浏览器中打开。") : nil }
+    func refreshLanguage() { languageRevision += 1 }
     private var window: NSWindow?
     let webView: WKWebView
 
@@ -42,7 +45,7 @@ final class ResetForecastWindow: NSObject, ObservableObject, WKNavigationDelegat
     }
 
     func reload() {
-        error = nil
+        failedToLoad = false
         loading = true
         webView.load(URLRequest(url: ResetRadarLinks.forecast, timeoutInterval: 25))
     }
@@ -57,7 +60,7 @@ final class ResetForecastWindow: NSObject, ObservableObject, WKNavigationDelegat
     private func failed(_ error: Error) {
         guard (error as NSError).code != NSURLErrorCancelled else { return }
         loading = false
-        self.error = "预测网站暂时无法加载。可以重试，或在浏览器中打开。"
+        self.failedToLoad = true
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -91,12 +94,12 @@ private struct ResetForecastBrowser: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Will Codex Reset").font(.headline)
-                    Text("社区预测 · 公告不等于账户到账").font(.caption).foregroundStyle(.secondary)
+                    Text(L("社区预测 · 公告不等于账户到账")).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 if browser.loading { ProgressView().controlSize(.small) }
-                Button("刷新") { browser.reload() }
-                Link("在浏览器打开", destination: ResetRadarLinks.forecast)
+                Button(L("刷新")) { browser.reload() }
+                Link(L("在浏览器打开"), destination: ResetRadarLinks.forecast)
             }.padding(12)
             if let error = browser.error {
                 Text(error).font(.callout).foregroundStyle(.orange).padding(12)

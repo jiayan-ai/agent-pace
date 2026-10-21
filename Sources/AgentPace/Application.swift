@@ -20,7 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             button.target = self
             button.action = #selector(togglePopover)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-            button.toolTip = "Agent Pace · 今天还可用的额度"
+            button.toolTip = "Agent Pace"
         }
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
@@ -194,6 +194,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 @main
 struct AgentPaceApplication {
     @MainActor static func main() {
+        Localization.language = AppLanguage.load()
         if CommandLine.arguments.contains("--check-reset-radar") {
             Task {
                 do {

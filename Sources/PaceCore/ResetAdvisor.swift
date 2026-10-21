@@ -118,7 +118,7 @@ public struct UsagePattern {
         }
     }
     public static func weekdayName(_ value: Int) -> String {
-        ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][max(0, min(6, value - 1))]
+        [L("周日"), L("周一"), L("周二"), L("周三"), L("周四"), L("周五"), L("周六")][max(0, min(6, value - 1))]
     }
 }
 
@@ -135,21 +135,21 @@ public struct ResetAdvice {
             ResetAdvice(kind: kind, title: title, reason: reason, preferredCreditID: credit)
         }
         guard !stale, let response else {
-            return advice(.refresh, "先同步最新额度", "上次记录不能用于决定是否消耗 reset。")
+            return advice(.refresh, L("先同步最新额度"), L("上次记录不能用于决定是否消耗 reset。"))
         }
         guard let credits = response.rateLimitResetCredits, credits.availableCount >= 0 else {
-            return advice(.unavailable, "Reset 数量暂不可用", "当前接口未返回可用数量，不代表账户没有 reset。")
+            return advice(.unavailable, L("Reset 数量暂不可用"), L("当前接口未返回可用数量，不代表账户没有 reset。"))
         }
         guard credits.availableCount > 0 else {
-            return advice(.noCredits, "目前没有可用 Reset", "等待自然重置，或在 Codex 中查看账户额度。")
+            return advice(.noCredits, L("目前没有可用 Reset"), L("等待自然重置，或在 Codex 中查看账户额度。"))
         }
         if (credits.credits ?? []).contains(where: { $0.status == "available" && $0.expiryDate.map { $0 <= now } == true }) {
-            return advice(.refresh, "Reset 有效期已变化", "有记录中的 reset 已到期，请刷新确认可用数量。")
+            return advice(.refresh, L("Reset 有效期已变化"), L("有记录中的 reset 已到期，请刷新确认可用数量。"))
         }
         let windows = response.windows.filter { $0.bucketID == "codex" }
         let valid = windows.filter { $0.window.remaining != nil && $0.window.resetDate.map { $0 > now } == true }
         guard !valid.isEmpty, valid.count == windows.count else {
-            return advice(.refresh, "等待有效的重置时间", "额度窗口已到期或信息不完整，先刷新后再判断。")
+            return advice(.refresh, L("等待有效的重置时间"), L("额度窗口已到期或信息不完整，先刷新后再判断。"))
         }
         let firstCredit = credits.usableDetails(at: now).first
         // Assess each window separately. A nearly empty short window matters
@@ -157,24 +157,24 @@ public struct ResetAdvice {
         let pressured = valid.filter { ($0.window.remaining ?? 100) <= 10 }
         let lastingPressure = pressured.filter { $0.window.resetDate!.timeIntervalSince(now) > 6 * 3600 }
         if !pressured.isEmpty && lastingPressure.isEmpty {
-            return advice(.wait, "优先等自然重置", "接近耗尽的窗口将在 6 小时内恢复；若工作可以等，先保留 reset。")
+            return advice(.wait, L("优先等自然重置"), L("接近耗尽的窗口将在 6 小时内恢复；若工作可以等，先保留 reset。"))
         }
         if let empty = lastingPressure.first(where: { $0.window.remaining == 0 }) {
-            return advice(.consider, "继续工作时可考虑 Reset", "\(empty.label) 已耗尽，自然重置仍超过 6 小时。若现在要继续工作，优先用最早到期的 reset。", credit: firstCredit?.id)
+            return advice(.consider, L("继续工作时可考虑 Reset"), L("\(empty.label) 已耗尽，自然重置仍超过 6 小时。若现在要继续工作，优先用最早到期的 reset。"), credit: firstCredit?.id)
         }
         guard historyFresh, pattern.sufficient else {
-            return advice(.learning, "先保留，历史仍需补足", "近 30 天有 \(pattern.observedDays) 个有效日记录；至少需要 14 天且历史同步正常，才给出模式建议。额度耗尽时仍会单独提示。")
+            return advice(.learning, L("先保留，历史仍需补足"), L("近 30 天有 \(pattern.observedDays) 个有效日记录；至少需要 14 天且历史同步正常，才给出模式建议。额度耗尽时仍会单独提示。"))
         }
         if !lastingPressure.isEmpty && pattern.highDemandSoon {
-            return advice(.consider, "下一段集中工作前考虑 Reset", "有窗口剩余不超过 10%，且近月模式显示近期可能较忙；等真正需要继续工作时再使用，优先选最早到期的一次。", credit: firstCredit?.id)
+            return advice(.consider, L("下一段集中工作前考虑 Reset"), L("有窗口剩余不超过 10%，且近月模式显示近期可能较忙；等真正需要继续工作时再使用，优先选最早到期的一次。"), credit: firstCredit?.id)
         }
         if let credit = firstCredit, let expiry = credit.expiryDate,
            expiry.timeIntervalSince(now) <= 3 * 86400 {
-            return advice(.reserve, "优先安排快到期的 Reset", "有 reset 将在 3 天内到期。若到期前额度接近耗尽且仍有工作，优先用这一张；无需为用券刻意消耗额度。", credit: credit.id)
+            return advice(.reserve, L("优先安排快到期的 Reset"), L("有 reset 将在 3 天内到期。若到期前额度接近耗尽且仍有工作，优先用这一张；无需为用券刻意消耗额度。"), credit: credit.id)
         }
         if pattern.highDemandSoon {
-            return advice(.reserve, "留给接下来的高用量时段", "近月模式显示近期可能较忙，但当前没有需要立即重置的窗口。等实际额度接近耗尽，再评估 reset。", credit: firstCredit?.id)
+            return advice(.reserve, L("留给接下来的高用量时段"), L("近月模式显示近期可能较忙，但当前没有需要立即重置的窗口。等实际额度接近耗尽，再评估 reset。"), credit: firstCredit?.id)
         }
-        return advice(.wait, "暂时保留 Reset", "当前额度和近月模式没有显示立即重置的必要。额度减少、券临近到期或模式变化时会重新建议。")
+        return advice(.wait, L("暂时保留 Reset"), L("当前额度和近月模式没有显示立即重置的必要。额度减少、券临近到期或模式变化时会重新建议。"))
     }
 }

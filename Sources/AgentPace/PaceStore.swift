@@ -6,16 +6,21 @@ import PaceCore
 final class PaceStore: ObservableObject {
     @Published private var history = PaceHistory()
     @Published private var refreshing: Set<UsageProvider> = []
-    @Published private var errors: [UsageProvider: String] = [:]
+    @Published private var errors: [UsageProvider: Error] = [:]
     @Published private var verified: Set<UsageProvider> = []
     @Published var now = Date()
-    @Published var persistenceError: String?
+    @Published private var persistenceFailed = false
+    @Published private(set) var language = Localization.language
+    var persistenceError: String? { persistenceFailed ? L("今日记录暂时无法保存；重新打开后会重新计算预算。") : nil }
     @Published private(set) var claudeEnabled = UserDefaults.standard.bool(forKey: "claudeWebConnectionEnabled")
     @Published private(set) var claudeNeedsLogin = false
     @Published private(set) var disconnectingClaude = false
     @Published private(set) var resetRadar: ResetRadarSnapshot?
     @Published private(set) var resetRadarRefreshing = false
-    @Published private(set) var resetRadarError: String?
+    @Published private var resetRadarFailure: Error?
+    var resetRadarError: String? {
+        resetRadarFailure.map { ($0 as? ResetRadarError)?.errorDescription ?? L("Reset 动态暂时无法同步。") }
+    }
     @Published private(set) var resetRadarEnabled = UserDefaults.standard.object(forKey: "resetRadarEnabled") as? Bool ?? true
     @Published private var resetRadarVerified = false
     private var resetRadarTask: Task<Void, Never>?
@@ -72,7 +77,7 @@ final class PaceStore: ObservableObject {
     var snapshot: UsageSnapshot? { history[provider].snapshot }
     var selectedID: String { history[provider].selectedID }
     var isRefreshing: Bool { refreshing.contains(provider) }
-    var error: String? { errors[provider] }
+    var error: String? { errors[provider].map { ($0 as? LocalizedError)?.errorDescription ?? L("额度同步失败，请稍后重试。") } }
     var windows: [MeteredWindow] { snapshot?.response.windows ?? [] }
     var selected: MeteredWindow? { windows.first(where: { $0.id == selectedID }) ?? windows.first }
     var sessionPace: ClaudeSessionPace? {
@@ -96,17 +101,17 @@ final class PaceStore: ObservableObject {
     var menuTitle: String {
         if let sessionPace { return sessionPace.menuTitle(stale: stale) }
         let title = selected?.bucketID == "claude_fable" ? "Fable" : provider.shortTitle
-        guard let budget = validBudget else { return "\(title) \(isRefreshing ? "同步中" : "待同步")" }
+        guard let budget = validBudget else { return "\(title) \(isRefreshing ? L("同步中") : L("待同步"))" }
         return "\(title) \(stale ? "≈" : "")\(number(budget.leftToday))%"
     }
     var menuTooltip: String {
         if let pace = sessionPace {
-            let allowance = pace.allowance.map { "\(number($0))\(pace.unit)" } ?? "待同步"
-            return "Claude · \(pace.heading) \(allowance)\n\(pace.countdown)\(stale ? " · 上次记录" : "")"
+            let allowance = pace.allowance.map { "\(number($0))\(pace.unit)" } ?? L("待同步")
+            return "Claude · \(pace.heading) \(allowance)\n\(pace.countdown)\(stale ? L(" · 上次记录") : "")"
         }
         let over = validBudget?.overBudget ?? 0
-        return over > 0 ? "\(provider.title) · 今日已超额 \(number(over)) 个百分点"
-            : "\(provider.title) · 今天还可用的额度"
+        return over > 0 ? L("\(provider.title) · 今日已超额 \(number(over)) 个百分点")
+            : L("\(provider.title) · 今天还可用的额度")
     }
     var daysLeft: Double? { selected?.window.resetDate.map { max(0, $0.timeIntervalSince(now) / 86400) } }
     var usagePattern: UsagePattern { UsagePattern(activity: history[provider].activity, now: now) }
@@ -116,6 +121,14 @@ final class PaceStore: ObservableObject {
         return ResetAdvice.evaluate(response: snapshot?.response, pattern: usagePattern,
                                     historyFresh: historyAge >= 0 && historyAge < 6 * 3600,
                                     stale: stale, now: now)
+    }
+    func selectLanguage(_ value: AppLanguage) {
+        Localization.language = value
+        language = value
+        value.save()
+        claudeSession.refreshLanguage()
+        ResetForecastWindow.shared.refreshLanguage()
+        onChange?()
     }
     func choose(_ id: String) { history[provider].selectedID = id; persist(); onChange?() }
     func selectProvider(_ value: UsageProvider) {
@@ -162,7 +175,7 @@ final class PaceStore: ObservableObject {
             case .success(let snapshot):
                 self.resetRadar = snapshot
                 self.resetRadarVerified = true
-                self.resetRadarError = nil
+                self.resetRadarFailure = nil
                 // Public cache is independent of account history; cache failure is non-fatal.
                 try? FileManager.default.createDirectory(at: self.resetRadarCacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
                 if let data = try? JSONEncoder().encode(snapshot) {
@@ -170,7 +183,7 @@ final class PaceStore: ObservableObject {
                     try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: self.resetRadarCacheURL.path)
                 }
             case .failure(let error):
-                self.resetRadarError = (error as? ResetRadarError)?.errorDescription ?? "Reset 动态暂时无法同步。"
+                self.resetRadarFailure = error
             }
         }
     }
@@ -232,7 +245,7 @@ final class PaceStore: ObservableObject {
             history[provider].ingest(current)
             persist()
         case .failure(let failure):
-            errors[provider] = (failure as? LocalizedError)?.errorDescription ?? "额度同步失败，请稍后重试。"
+            errors[provider] = failure
             if let error = failure as? ClaudeUsageError {
                 switch error {
                 case .notSignedIn, .expired, .scopeMissing, .ambiguousAccount:
@@ -252,21 +265,21 @@ final class PaceStore: ObservableObject {
             try FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try JSONEncoder().encode(history).write(to: cacheURL, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cacheURL.path)
-            persistenceError = nil
-        } catch { persistenceError = "今日记录暂时无法保存；重新打开后会重新计算预算。" }
+            persistenceFailed = false
+        } catch { persistenceFailed = true }
     }
 }
 
 func number(_ value: Double) -> String { String(format: "%.1f", value) }
 func localTime(_ date: Date) -> String {
     let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "zh_CN")
+    formatter.locale = Localization.locale
     formatter.dateFormat = "HH:mm"
     return formatter.string(from: date)
 }
 func resetTime(_ date: Date) -> String {
     let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "zh_CN")
-    formatter.dateFormat = "M 月 d 日 HH:mm"
+    formatter.locale = Localization.locale
+    formatter.dateFormat = L("M 月 d 日 HH:mm")
     return formatter.string(from: date)
 }
