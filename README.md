@@ -26,6 +26,8 @@ A native macOS menu bar app that turns your remaining Codex / Claude subscriptio
 
 1.4.1 起详情使用 macOS 原生弹出层，普通启动保持收起；首次点击即可展开，再次点击或点击外部收起。滚动、额度窗口下拉菜单及「更多选项」交给系统处理，避免启动激活和自定义失焦监听互相关闭详情。
 
+1.5.1 针对状态栏图标与数字偶发空白调整绘制：将完整标签作为系统模板图像，明确预留宽度，颜色随菜单栏变化；内容未变时不反复重设，仅在显示器变化、唤醒和关闭详情时恢复绘制。取消弹窗打开后的持续手动高亮。回归检查覆盖标签实际像素、普通与 Retina 分辨率及连续展开/收起。
+
 在 Claude Code 下的「额度窗口」选择 **Claude Fable · 7 天**，菜单栏会相应显示「Fable …%」。该窗口仅在账户接口实际返回 Fable 额度时出现，不根据套餐名称推测或从总周额度倒算。Fable 使用同时计入总周额度，也受 5 小时额度限制；它不是额外赠送的周额度。参见 [Claude Fable 套餐说明](https://support.claude.com/en/articles/15424964-claude-fable-models-on-your-plan)。
 
 需要 macOS 13 或更新版本，并已安装、登录 ChatGPT / Codex 桌面应用，或 Codex CLI。下载包包含 Apple Silicon 和 Intel 两种架构；已在 Apple Silicon 上运行验证，Intel 尚未实机验证。应用使用本机现有的 Codex 登录状态，不需要填写 API Key。Claude 需要在 **Agent Pace 的连接窗口中登录一次**，之后复用会话自动刷新；无需登录终端版，也不访问 Claude Safe Storage。请使用与 Claude 桌面 Code 相同的账户。

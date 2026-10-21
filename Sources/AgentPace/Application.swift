@@ -9,15 +9,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let popover = NSPopover()
     private var screenObserver: NSObjectProtocol?
     private var window: NSWindow?
+    private var renderedStatusTitle: String?
+    private var wakeObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "chart.pie", accessibilityDescription: "Agent Pace")
-            button.image?.isTemplate = true
-            button.imagePosition = .imageLeading
-            button.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+            button.imagePosition = .imageOnly
             button.target = self
             button.action = #selector(togglePopover)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -26,7 +25,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.hideMenu() }
+            Task { @MainActor in
+                self?.hideMenu()
+                self?.updateStatusItem(force: true)
+            }
+        }
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.updateStatusItem(force: true) }
         }
         popover.behavior = .transient
         popover.animates = false
@@ -52,9 +59,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         else { showMenu() }
     }
 
-    private func updateStatusItem() {
+    private func updateStatusItem(force: Bool = false) {
         guard let button = statusItem.button else { return }
-        button.title = " " + store.menuTitle
+        let title = store.menuTitle
+        if force || renderedStatusTitle != title || button.image == nil {
+            let image = StatusItemLabel.image(for: title)
+            button.title = ""
+            button.image = image
+            // Reserve the full label width rather than relying on a mixed
+            // image/title cell to invalidate its intrinsic size after refresh.
+            statusItem.length = image.size.width + 16
+            button.setAccessibilityLabel("Agent Pace · \(title)")
+            renderedStatusTitle = title
+            button.needsDisplay = true
+        }
         button.contentTintColor = nil
         button.toolTip = store.menuTooltip
     }
@@ -77,13 +95,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         // AppKit owns outside-click dismissal, focus, and nested Picker/Menu
         // tracking. Do not activate the app or install competing event monitors.
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        button.highlight(true)
     }
 
     private func hideMenu() { popover.performClose(nil) }
 
     func popoverDidClose(_ notification: Notification) {
-        statusItem.button?.highlight(false)
+        updateStatusItem(force: true)
     }
 
     // Exercises real AppKit status-button actions across run-loop turns. It does
@@ -94,6 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         guard let button = statusItem.button, button.window != nil, !popover.isShown else {
             fail("Startup must leave a ready status button and a closed popover")
         }
+        checkStatusRendering()
         for cycle in 1...3 {
             button.performClick(nil)
             try? await Task.sleep(nanoseconds: 400_000_000)
@@ -109,9 +127,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             button.performClick(nil)
             try? await Task.sleep(nanoseconds: 100_000_000)
             guard !popover.isShown else { fail("Second click did not close the popover") }
+            guard let image = button.image, image.isTemplate, image.size.width > 21,
+                  button.bounds.width >= image.size.width, !button.isHidden,
+                  button.alphaValue > 0, button.title.isEmpty else {
+                fail("Status label is missing, clipped or using a separate title")
+            }
         }
         print("PASS 菜单栏冷启动、连续三次展开/收起、更新时保持显示及屏幕边界")
         exit(0)
+    }
+
+    private func checkStatusRendering() {
+        for title in ["Fable 22.9%", "Codex -7.6%", "Claude ≈30.7%/h", "Claude 60.0% · <1h", "Claude 同步中"] {
+            let image = StatusItemLabel.image(for: title)
+            // Check the actual rendered alpha, including the text region, at
+            // both display scales. A nonempty title alone missed the blank bug.
+            for scale in [1, 2] {
+                let width = Int(image.size.width) * scale
+                let height = Int(image.size.height) * scale
+                let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
+                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+                image.draw(in: NSRect(x: 0, y: 0, width: width, height: height))
+                NSGraphicsContext.restoreGraphicsState()
+                var symbolPixels = 0
+                var textPixels = 0
+                for x in 0..<width {
+                    for y in 0..<height where (bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.1 {
+                        if x < 18 * scale { symbolPixels += 1 } else { textPixels += 1 }
+                    }
+                }
+                guard image.isTemplate, symbolPixels > 20, textPixels > 20 else {
+                    fputs("FAIL Status label rendered blank at \(scale)x\n", stderr); exit(1)
+                }
+            }
+        }
+        print("PASS 状态栏图标与数字实际绘制、负数/小时/同步状态及 1x/2x 分辨率")
     }
 
     func showWindow() {
